@@ -766,6 +766,14 @@
   concept of key checkpoint is clear in the discussion and the behavior of the
   user.  
 
+  See
+  ~url[http://www.cs.utexas.edu/users/moore/acl2/contrib/POLISHING-PROOFS-TUTORIAL.html]
+  for a tutorial on becoming successful at approaching a formalization and
+  proof problem in ACL2.  That tutorial, written by Shilpi Goel and Sandip Ray,
+  has two parts: it illustrates how to guide the theorem prover to a successful
+  proof, and it shows how to clean up the proof in order to facilitate
+  maintenance and extension of the resulting book (~pl[books]).
+
   At ~url[http://www.cs.utexas.edu/users/moore/publications/tutorial/kaufmann-TPHOLs08/index.html]
   is the demo given by Matt Kaufmann at TPHOLs08, including all the scripts.  There is a gzipped
   tar file containing the entire contents of the demos.
@@ -7031,16 +7039,15 @@
    The whole point of proving theorems is that it is a way to determine that a
    formula is ``always true'' (under some model of the axioms).  By ``always
    true'' we actually mean what logicians mean when they say the formula is
-   ~i[valid]: true in the model, for all possible values the variables.  Here
-   by ``model of the axioms'' we mean an understanding of the meaning of the
-   various function symbols so that the axioms are true for all values of the
-   variables.  If the variables in your conjecture can take on an infinite
+   ~i[valid]: true in the model, for all possible values of the variables.
+   Here by ``model of the axioms'' we mean an understanding of the meaning of
+   the various function symbols so that the axioms are true for all values of
+   the variables.  If the variables in your conjecture can take on an infinite
    number of values, proof is often the ~b[only] way to determine that a
-   conjecture is ``always true.''  So if proof is being used to determine that a
-   questionable formula is always true the proof must be carried out
-   flawlessly.  Thus, the (a) syntax, (b) axioms, and
-   (c) rules of inference must be described precisely and followed to the
-   letter.
+   conjecture is ``always true.''  So if proof is being used to determine that
+   a questionable formula is always true the proof must be carried out
+   flawlessly.  Thus, the (a) syntax, (b) axioms, and (c) rules of inference
+   must be described precisely and followed to the letter.
 
    But formal mathematical logic was invented to explain how people reason.  To
    the extent that logic mimics human reasoning, proofs can be seen as just

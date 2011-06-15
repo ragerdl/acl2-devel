@@ -345,14 +345,14 @@
 
   ;; Same as chk-assumption-free-ttree, but returns a value.
 
-  (cond ((tagged-object 'assumption ttree)
+  (cond ((tagged-objectsp 'assumption ttree)
          (er hard ctx
              "The 'assumption ~x0 was found in the final ttree!"
-             (tagged-object 'assumption ttree)))
-        ((tagged-object 'fc-derivation ttree)
+             (car (tagged-objects 'assumption ttree))))
+        ((tagged-objectsp 'fc-derivation ttree)
          (er hard ctx
              "The 'fc-derivation ~x0 was found in the final ttree!"
-             (tagged-object 'fc-derivation ttree)))
+             (car (tagged-objects 'fc-derivation ttree))))
         (t t)))
 
 (defun put-cdr-assoc-query-id (id val alist)
@@ -1490,7 +1490,7 @@
 (defun pc-prove (term displayed-goal hints otf-flg ens wrld ctx state)
 
 ; This is exactly the same as the ACL2 PROVE function, except that we allow
-; :bye objects in the tag tree, there is no checking of the load mode, and the
+; :bye objects in the tag-tree, there is no checking of the load mode, and the
 ; warning above.
 
   (prog2$
@@ -1540,7 +1540,7 @@
                    (find-?-fn (cdr x))))))
 
 (defun unproved-pc-prove-terms (ttree)
-  (strip-cdrs (tagged-objects :bye ttree nil)))
+  (reverse-strip-cdrs (tagged-objects :bye ttree) nil))
 
 (defun prover-call (comm term-to-prove rest-args pc-state state)
   ;; We assume that the :otf-flg and :hints "hints" are locally inside
@@ -1634,20 +1634,7 @@
               (access goal goal2 :conc))))
 
 (defun remove-byes-from-tag-tree (ttree)
-  (cond ((null ttree) nil)
-        ((eq ttree t)
-         (er hard 'remove-byes-from-tag-tree
-             "Found tag tree of T in REMOVE-BYES-FROM-TAG-TREE."))
-        ((eq :bye (caar ttree))
-         ;; then ttree is ((:bye ...)) and we could perhaps return ()
-         ;; but we play it safe
-         (remove-byes-from-tag-tree (cdr ttree)))
-        ((symbolp (caar ttree))
-         (cons (car ttree)
-               (remove-byes-from-tag-tree (cdr ttree))))
-        (t (cons-tag-trees
-            (remove-byes-from-tag-tree (car ttree))
-            (remove-byes-from-tag-tree (cdr ttree))))))
+  (remove-tag-from-tag-tree :bye ttree))
 
 (define-pc-primitive prove (&rest rest-args)
 
@@ -4974,9 +4961,9 @@
                    normalize-flg rewrite-flg ens state repeat backchain-limit
                    step-limit))
    (cond ((eql step-limit -1)
-          (mv term old-ttree state))
+          (mv step-limit term old-ttree state))
          (t
-          (mv newterm ttree state)))))
+          (mv step-limit newterm ttree state)))))
 
 (defun make-goals-from-assumptions (assumptions conc hyps current-addr goal-name start-index)
   (if assumptions
@@ -5189,31 +5176,34 @@
                               (maybe-warn-about-theory-from-rcnsts
                                base-rcnst local-rcnst :s pc-ens w state)
                             state)
-                          (mv-let (new-term new-ttree state)
-                                  (pc-rewrite*
-                                   current-term
-                                   hyps-type-alist
-                                   (geneqv-at-subterm-top conc current-addr
-                                                          pc-ens w)
-                                   (term-id-iff conc current-addr t)
-                                   w local-rcnst nil nil normalize rewrite
-                                   pc-ens state repeat local-backchain-limit
-                                   (initial-step-limit w state))
-                                  (if (equal new-term current-term)
-                                      (print-no-change2
-                                       "No simplification took place.")
-                                    (pprogn
-                                     (mv-let
-                                      (new-goal state)
-                                      (deposit-term-in-goal
-                                       (car goals)
-                                       conc current-addr new-term state)
-                                      (mv (change-pc-state
-                                           pc-state
-                                           :goals
-                                           (cons new-goal (cdr goals))
-                                           :local-tag-tree new-ttree)
-                                          state))))))))))))))))))))))
+                          (sl-let
+                           (new-term new-ttree state)
+                           (pc-rewrite*
+                            current-term
+                            hyps-type-alist
+                            (geneqv-at-subterm-top conc current-addr
+                                                   pc-ens w)
+                            (term-id-iff conc current-addr t)
+                            w local-rcnst nil nil normalize rewrite
+                            pc-ens state repeat local-backchain-limit
+                            (initial-step-limit w state))
+                           (pprogn
+                            (f-put-global 'last-step-limit step-limit state)
+                            (if (equal new-term current-term)
+                                (print-no-change2
+                                 "No simplification took place.")
+                              (pprogn
+                               (mv-let
+                                (new-goal state)
+                                (deposit-term-in-goal
+                                 (car goals)
+                                 conc current-addr new-term state)
+                                (mv (change-pc-state
+                                     pc-state
+                                     :goals
+                                     (cons new-goal (cdr goals))
+                                     :local-tag-tree new-ttree)
+                                    state)))))))))))))))))))))))
 
 ;; The proof-checker's enabled state will be either the global enabled
 ;; state or else a local one.  The proof-checker command :IN-THEORY

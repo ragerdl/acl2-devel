@@ -2877,7 +2877,7 @@
                (add-to-tag-tree
                 'bddnote
                 bddnote
-                (cons-into-ttree ttree ttree1))))
+                (cons-tag-trees ttree ttree1))))
           (prove-hint
            (mv 'error
                (list "The :BDD hint for the current goal has ~
@@ -2897,7 +2897,7 @@
                      (ttree (add-to-tag-tree
                              'bddnote
                              bddnote
-                             (cons-into-ttree ttree ttree1))))
+                             (cons-tag-trees ttree ttree1))))
                 (cond
                  ((eq position :conc)
                   (mv 'hit
@@ -3983,7 +3983,7 @@
 ; which is a data-base kind of function rather than a workhorse function.
 ; 
 ; You'll see things like the following (from local entry to BDD).  The idea here
-; is is that we are boxing a fixnum and pushing it on a stack, but why?  LnkLI253
+; is that we are boxing a fixnum and pushing it on a stack, but why?  LnkLI253
 ; appears to be a function call, which is found near the end of the file to
 ; correspond to leaf-cst-list-array.  If we're still not clear on what's going
 ; on, we can look up 273 as well.  When we do this, we find that we are probably

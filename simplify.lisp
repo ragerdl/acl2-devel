@@ -555,7 +555,7 @@
 (defun disjoin-clause-segment-to-clause-set (segment cl-set)
 
 ; This code is not tail-recursive, but it could be.  At one time it caused
-; stack overflow problems in Lispworks 4.2.0.  Below is some alternate code,
+; stack overflow problems in LispWorks 4.2.0.  Below is some alternate code,
 ; with a reverse call in order to provide unchanged functionality.  Would we
 ; gain efficiency by eliminating tail recursion at the cost of that reverse
 ; call?  Maybe.  A clearer win would be to avoid the reverse call, which should
@@ -1109,7 +1109,9 @@
                                                  trigger-terms activations)))))
 )
 
-(defun collect-terms-and-activations-from-fcd-lst (fcd-lst wrld ens trigger-terms activations)
+(defun collect-terms-and-activations-from-fcd-lst (fcd-lst wrld ens
+                                                           trigger-terms
+                                                           activations)
 
 ; We map over a list of fc-derivations and treat each :concl as a source
 ; of trigger terms, each subterm being marked with the fc-derivation tag
@@ -1122,7 +1124,7 @@
             (trigger-terms activations)
             (collect-terms-and-activations
              (access fc-derivation (car fcd-lst) :concl)
-             (add-to-tag-tree 'fc-derivation (car fcd-lst) nil)
+             (add-to-tag-tree! 'fc-derivation (car fcd-lst) nil)
              wrld ens trigger-terms activations)
             (collect-terms-and-activations-from-fcd-lst
              (cdr fcd-lst)
@@ -1472,16 +1474,14 @@
                      ,@(prettyify-fc-derivations
                         (tagged-objects
                          'fc-derivation
-                         (access fc-derivation fcd :ttree)
-                         nil)
+                         (access fc-derivation fcd :ttree))
                         0)))
       (3 `(,fc-round ,concl ,name
                      (:LITERALS ,@(collect-parents
                                    (access fc-derivation fcd :ttree)))
                      ,@(prettyify-fc-derivations
                         (tagged-objects 'fc-derivation
-                                        (access fc-derivation fcd :ttree)
-                                        nil)
+                                        (access fc-derivation fcd :ttree))
                         3)))
       (otherwise
        `(
@@ -1500,8 +1500,7 @@
 ; and relying on these facts from earlier rounds for the other hyps:
          ,@(prettyify-fc-derivations
             (tagged-objects 'fc-derivation
-                            (access fc-derivation fcd :ttree)
-                            nil)
+                            (access fc-derivation fcd :ttree))
             4))))))
 
 (defun prettyify-fc-derivations (fcd-lst level)
@@ -1509,6 +1508,18 @@
         (t (cons (prettyify-fc-derivation (car fcd-lst) level)
                  (prettyify-fc-derivations (cdr fcd-lst) level)))))
  )
+
+(mutual-recursion
+
+(defun expunge-fc-derivations-lst (fc-derivation-lst ttree)
+  (cond ((endp fc-derivation-lst) ttree)
+        (t (push-lemma
+            (access fc-derivation (car fc-derivation-lst) :rune)
+            (cons-tag-trees (expunge-fc-derivations
+                             (access fc-derivation (car fc-derivation-lst)
+                                     :ttree))
+                            (expunge-fc-derivations-lst (cdr fc-derivation-lst)
+                                                        ttree))))))
 
 (defun expunge-fc-derivations (ttree)
 
@@ -1569,20 +1580,12 @@
 ; 
 ;   (thm (concl (trig a))))
 
-  (cond ((null ttree) nil)
-        ((symbolp (caar ttree))
-         (cond ((eq (caar ttree) 'fc-derivation)
-                (push-lemma
-                 (access fc-derivation (cdar ttree) :rune)
-                 (cons-tag-trees
-                  (expunge-fc-derivations
-                   (access fc-derivation (cdar ttree) :ttree))
-                  (expunge-fc-derivations (cdr ttree)))))
-               (t (add-to-tag-tree (caar ttree)
-                                   (cdar ttree)
-                                   (expunge-fc-derivations (cdr ttree))))))
-        (t (cons-tag-trees (expunge-fc-derivations (car ttree))
-                           (expunge-fc-derivations (cdr ttree))))))
+  (let ((objects (tagged-objects 'fc-derivation ttree)))
+    (cond (objects (expunge-fc-derivations-lst
+                    objects
+                    (remove-tag-from-tag-tree! 'fc-derivation ttree)))
+          (t ttree))))
+)
 
 ; A Reporting Facility for Forward Chaining
 
@@ -3669,58 +3672,54 @@
 ; problem is to avoid infinite forward chaining.  So we define a
 ; predicate that determines whether we wish to keep a given derivation.
 
-(defun fcd-runep (rune ttree)
+(defmacro fcd-runep (rune ttree)
 
-; Rune is the name of a forward chaining rule.  We want to determine if
-; rune has been used in any fc-derivation in ttree.  This function is
-; analogous to tag-tree-occur except that it knows that 'fc-derivation
-; tags contain other ttrees and it looks recursively into those ttrees
-; too.
+; Rune is the name of a forward chaining rule.  We want to determine if rune
+; has been used in any fc-derivation in ttree.  This macro is analogous to
+; tag-tree-occur except that it knows that 'fc-derivation tags contain other
+; ttrees and it looks recursively into those ttrees too.  It is a macro so that
+; fcd-runep-lst can be singly recursive (which could conceivably help
+; performance, but at any rate seems very unlikely to hurt).
 
-  (cond ((null ttree) nil)
-        ((symbolp (caar ttree))
-         (cond ((eq (caar ttree) 'fc-derivation)
-                (or (equal rune (access fc-derivation (cdar ttree) :rune))
-                    (fcd-runep rune
-                               (access fc-derivation
-                                       (cdar ttree)
-                                       :ttree))
-                    (fcd-runep rune (cdr ttree))))
-               (t (fcd-runep rune (cdr ttree)))))
-        (t (or (fcd-runep rune (car ttree))
-               (fcd-runep rune (cdr ttree))))))
+  `(fcd-runep-lst ,rune (tagged-objects 'fc-derivation ,ttree)))
 
-(defun fcd-worse-than-or-equal (concl fn-cnt p-fn-cnt ttree)
+(defun fcd-runep-lst (rune lst)
+  (cond ((endp lst) nil)
+        (t (or (equal rune (access fc-derivation (car lst) :rune))
+               (fcd-runep rune (access fc-derivation (car lst) :ttree))
+               (fcd-runep-lst rune (cdr lst))))))
 
-; Concl is a term and fn-cnt is its function symbol count.  If there
-; exists a concl' with fn count fn-cnt' in an 'fc-derivation of ttree
-; such that fn-cnt >= fn-cnt' and concl is worse-than-or-equal to concl',
-; then we return t.  Otherwise we return nil.
+(defmacro fcd-worse-than-or-equal (concl fn-cnt p-fn-cnt ttree)
 
-  (cond ((null ttree) nil)
-        ((symbolp (caar ttree))
-         (cond ((eq (caar ttree) 'fc-derivation)
-                (or (and (let ((fc-fn-cnt (access fc-derivation (cdar ttree)
-                                                  :fn-cnt)))
-                           (or (> fn-cnt fc-fn-cnt)
-                               (and (eql fn-cnt fc-fn-cnt)
-                                    (>= p-fn-cnt
-                                        (access fc-derivation (cdar ttree)
-                                                :p-fn-cnt)))))
-                         (worse-than-or-equal concl
-                                              (access fc-derivation
-                                                      (cdar ttree)
-                                                      :concl)))
-                    (fcd-worse-than-or-equal concl fn-cnt p-fn-cnt
-                                             (access fc-derivation
-                                                     (cdar ttree)
-                                                     :ttree))
-                    (fcd-worse-than-or-equal concl fn-cnt p-fn-cnt
-                                             (cdr ttree))))
-               (t (fcd-worse-than-or-equal concl fn-cnt p-fn-cnt
-                                           (cdr ttree)))))
-        (t (or (fcd-worse-than-or-equal concl fn-cnt p-fn-cnt (car ttree))
-               (fcd-worse-than-or-equal concl fn-cnt p-fn-cnt (cdr ttree))))))
+; Concl is a term and fn-cnt is its function symbol count.  If there exists a
+; concl' with fn count fn-cnt' in an 'fc-derivation of ttree such that fn-cnt
+; >= fn-cnt' and concl is worse-than-or-equal to concl', then we return t.
+; Otherwise we return nil.  We define a macro so that
+; fcd-worse-than-or-equal-lst can be singly recursive (which could conceivably
+; help performance, but at any rate seems very unlikely to hurt).
+
+  `(fcd-worse-than-or-equal-lst
+    ,concl ,fn-cnt ,p-fn-cnt (tagged-objects 'fc-derivation ,ttree)))
+
+(defun fcd-worse-than-or-equal-lst (concl fn-cnt p-fn-cnt lst)
+  (cond ((endp lst) nil)
+        (t (or (and (let ((fc-fn-cnt (access fc-derivation (car lst)
+                                             :fn-cnt)))
+                      (or (> fn-cnt fc-fn-cnt)
+                          (and (eql fn-cnt fc-fn-cnt)
+                               (>= p-fn-cnt
+                                   (access fc-derivation (car lst)
+                                           :p-fn-cnt)))))
+                    (worse-than-or-equal concl
+                                         (access fc-derivation
+                                                 (car lst)
+                                                 :concl)))
+               (fcd-worse-than-or-equal concl fn-cnt p-fn-cnt
+                                        (access fc-derivation
+                                                (car lst)
+                                                :ttree))
+               (fcd-worse-than-or-equal-lst concl fn-cnt p-fn-cnt
+                                            (cdr lst))))))
 
 ; Once upon a time we had heuristics for keeping concl if there was
 ; a lit of the current clause that was worse than it or if there was a
@@ -4020,9 +4019,9 @@
        (mbt mbf tta fta ttree)
        (assume-true-false
         (access fc-derivation (car fcd-lst) :concl)
-        (add-to-tag-tree 'fc-derivation
-                         (car fcd-lst)
-                         nil)
+        (add-to-tag-tree! 'fc-derivation
+                          (car fcd-lst)
+                          nil)
         force-flg nil type-alist ens wrld nil nil :fta)
        (declare (ignore fta))
        (cond (mbf (mv t ttree))
@@ -4760,16 +4759,15 @@
                  (cleanup-if-expr-lst (cdr x) trues falses)))))
 )
 
+(defun all-type-reasoning-tags-p1 (lemmas)
+  (cond ((endp lemmas) t)
+        ((or (eq (car (car lemmas)) :FAKE-RUNE-FOR-TYPE-SET)
+             (eq (car (car lemmas)) :TYPE-PRESCRIPTION))
+         (all-type-reasoning-tags-p1 (cdr lemmas)))
+        (t nil)))
+
 (defun all-type-reasoning-tags-p (ttree)
-  (cond
-   ((null ttree) t)
-   ((symbolp (caar ttree))
-    (and (or (not (eq (car (car ttree)) 'LEMMA))
-             (eq (cadr (car ttree)) :FAKE-RUNE-FOR-TYPE-SET)
-             (eq (cadr (car ttree)) :TYPE-PRESCRIPTION))
-         (all-type-reasoning-tags-p (cdr ttree))))
-   (t (and (all-type-reasoning-tags-p (car ttree))
-           (all-type-reasoning-tags-p (cdr ttree))))))
+  (all-type-reasoning-tags-p1 (tagged-objects 'lemma ttree)))
 
 (defun try-clause (atm clause wrld)
 
@@ -4793,14 +4791,16 @@
   (or ttree
       *trivial-non-nil-ttree*))
 
-(defun try-type-set-and-clause (atm ans ttree current-clause wrld ens knownp)
+(defun try-type-set-and-clause (atm ans ttree ttree0 current-clause wrld ens
+                                    knownp)
 
 ; We are finishing off a call to rewrite-atm on atm that is about to return ans
-; with associated ttree.  Ans is *t* or *nil*, but in a context in which this
-; would produce a removal of ans rather than a win.  We have found it
-; heuristically useful to disallow such removals except when atm is trivially
-; known to be true or false.  We return the desired rewritten value of atm and
-; associated justifying ttree.
+; with associated ttree, which is assumed to extend ttree0.  Ans is *t* or
+; *nil*, but in a context in which this would produce a removal of ans rather
+; than a win.  We have found it heuristically useful to disallow such removals
+; except when atm is trivially known to be true or false.  We return the
+; desired rewritten value of atm and associated justifying ttree that extends
+; ttree0.
 
   (mv-let (ts ttree1)
           (type-set atm nil nil nil ens wrld nil nil nil)
@@ -4812,13 +4812,13 @@
 ; from the clause to reduce clutter.  We certainly do not lose anything by
 ; allowing such removals.
 
-                 (mv *nil* ttree1 nil))
+                 (mv *nil* (cons-tag-trees ttree1 ttree0) nil))
                 ((ts-subsetp ts *ts-non-nil*)
-                 (mv *t* ttree1 nil))
+                 (mv *t* (cons-tag-trees ttree1 ttree0) nil))
                 ((try-clause atm current-clause wrld)
                  (mv ans ttree nil))
                 (t
-                 (mv atm nil (and knownp (make-non-nil-ttree ttree)))))))
+                 (mv atm ttree0 (and knownp (make-non-nil-ttree ttree)))))))
 
 (mutual-recursion
 
@@ -4842,7 +4842,7 @@
 
 (defun rewrite-atm (atm not-flg bkptr gstack type-alist wrld
                         simplify-clause-pot-lst rcnst current-clause state
-                        step-limit)
+                        step-limit ttree0)
 
 ; This function rewrites atm with nth-update-rewriter, recursively.  Then it
 ; rewrites the result with rewrite, in the given context, maintaining iff.
@@ -4857,9 +4857,9 @@
 ; it first gives type-set a chance to decide things.
 
 ; But a more complex exception is that instead of the usual result from
-; rewrite, (mv rewritten-atm ttree), we return a third value as well: when
-; non-nil, it is a ttree justifying the rewriting of atm to *t* or *nil*
-; according to not-flg having value t or nil, respectively.  We use this
+; rewrite, (mv step-limit rewritten-atm ttree), we return a fourth value as
+; well: when non-nil, it is a ttree justifying the rewriting of atm to *t* or
+; *nil* according to not-flg having value t or nil, respectively.  We use this
 ; additional information to rewrite a clause to *false-clause* when every
 ; literal simplifies to nil even when our heuristics (documented rather
 ; extensively below) would normally refuse to simplify at least one of those
@@ -4886,7 +4886,7 @@
                                      :current-enabled-structure)
                              (ok-to-force rcnst)
                              wrld
-                             nil)
+                             ttree0)
           (cond
 
 ; Before Version  2.6 we had
@@ -5001,7 +5001,10 @@
                              (lambda-abstract
                               (cleanup-if-expr atm1 nil nil)
                               (pkg-witness (current-package state)))
-                           atm)))
+                           atm))
+                   (lemmas0 (tagged-objects 'lemma ttree0))
+                   (lemmas1 (and hitp (tagged-objects 'lemma ttree1)))
+                   (ttree00 (remove-tag-from-tag-tree 'lemma ttree0)))
                (sl-let (ans1 ans2)
                        (rewrite-entry
                         (rewrite atm2
@@ -5020,7 +5023,23 @@
                         :simplify-clause-pot-lst simplify-clause-pot-lst
                         :rcnst rcnst
                         :gstack gstack
-                        :ttree (if hitp ttree1 nil))
+                        :ttree (if hitp
+                                   (cons-tag-trees
+                                    (remove-tag-from-tag-tree 'lemma ttree1)
+                                    ttree00)
+                                 ttree00))
+                       (let* ((old-lemmas (if lemmas0
+                                              (union-equal lemmas1 lemmas0)
+                                            lemmas1))
+                              (new-lemmas (tagged-objects 'lemma ans2))
+                              (final-lemmas (if old-lemmas
+                                                (union-equal new-lemmas
+                                                             old-lemmas)
+                                              new-lemmas))
+                              (ttree (maybe-extend-tag-tree
+                                      'lemma
+                                      final-lemmas
+                                      (remove-tag-from-tag-tree 'lemma ans2))))
 
 ; But we need to do even more work to prevent type-set from removing
 ; ``facts'' from the goal.  Here is another (edited) transcript:
@@ -5086,37 +5105,37 @@
 ; which a proof succeeds or fails depending on the order of hypotheses really
 ; gets Robert's goat.
 
-                 (cond ((not (or (equal ans1 *nil*)
-                                 (equal ans1 *t*)))
+                         (cond ((not (or (equal ans1 *nil*)
+                                         (equal ans1 *t*)))
 
 ; We have, presumably, not removed any facts, so we allow this rewrite.
 
-                        (mv step-limit ans1 ans2
-                            (and knownp *trivial-non-nil-ttree*)))
-                       ((and (nvariablep atm2)
-                             (not (fquotep atm2))
-                             (equivalence-relationp (ffn-symb atm2)
-                                                    wrld))
+                                (mv step-limit ans1 ttree
+                                    (and knownp *trivial-non-nil-ttree*)))
+                               ((and (nvariablep atm2)
+                                     (not (fquotep atm2))
+                                     (equivalence-relationp (ffn-symb atm2)
+                                                            wrld))
 
 ; We want to blow away equality (and equivalence) hypotheses, because for
 ; example there may be a :use or :cases hint that is intended to blow away (by
 ; implication) such hypotheses.
 
-                        (mv step-limit ans1 ans2 nil))
-                       ((equal ans1 (if not-flg *nil* *t*))
+                                (mv step-limit ans1 ttree nil))
+                               ((equal ans1 (if not-flg *nil* *t*))
 
 ; We have proved the original literal from which atm is derived; hence we have
 ; proved the clause.  So we report this reduction.
 
-                        (mv step-limit ans1 ans2 nil))
-                       ((all-type-reasoning-tags-p ans2)
+                                (mv step-limit ans1 ttree nil))
+                               ((all-type-reasoning-tags-p ans2)
 
 ; Type-reasoning alone has been used, so we are careful in what we allow.
 
-                        (cond ((lambda-subtermp atm2)
+                                (cond ((lambda-subtermp atm2)
 
 ; We received an example from Jared Davis in which a hypothesis of the form
-; (not (let ...)) rewrites to true with a tag tree of nil, and hence was kept
+; (not (let ...)) rewrites to true with a tag-tree of nil, and hence was kept
 ; without this lambda-subtermp case.  The problem with keeping that hypothesis
 ; is that it has calls of IF in a lambda body, which do not get eliminated by
 ; clausification -- and this presence of IF terms causes the :force-info field
@@ -5139,8 +5158,8 @@
 ; or *nil*, we can probably feel comfortable in adding conditions as we have
 ; done with the lambda-subtermp test above.
 
-                               (mv step-limit ans1 ans2 nil))
-                              ((eq (fn-symb atm2) 'implies)
+                                       (mv step-limit ans1 ttree nil))
+                                      ((eq (fn-symb atm2) 'implies)
 
 ; We are contemplating throwing away the progress made by the above call of
 ; rewrite.  However, we want to keep progress made by expanding terms of the
@@ -5148,32 +5167,32 @@
 ; reasonable to keep this in sync with the corresponding use of subcor-var in
 ; rewrite.
 
-                               (prepend-step-limit
-                                3
-                                (try-type-set-and-clause
-                                 (subcor-var (formals 'implies wrld)
-                                             (list (fargn atm2 1)
-                                                   (fargn atm2 2))
-                                             (body 'implies t wrld))
-                                 ans1 ans2 current-clause wrld
-                                 (access rewrite-constant rcnst
-                                         :current-enabled-structure)
-                                 knownp)))
-                              (t
+                                       (prepend-step-limit
+                                        3
+                                        (try-type-set-and-clause
+                                         (subcor-var (formals 'implies wrld)
+                                                     (list (fargn atm2 1)
+                                                           (fargn atm2 2))
+                                                     (body 'implies t wrld))
+                                         ans1 ttree ttree0 current-clause wrld
+                                         (access rewrite-constant rcnst
+                                                 :current-enabled-structure)
+                                         knownp)))
+                                      (t
 
 ; We make one last effort to allow removal of certain ``trivial'' facts from
 ; the goal.
 
-                               (prepend-step-limit
-                                3
-                                (try-type-set-and-clause
-                                 atm2
-                                 ans1 ans2 current-clause wrld
-                                 (access rewrite-constant rcnst
-                                         :current-enabled-structure)
-                                 knownp)))))
-                       (t
-                        (mv step-limit ans1 ans2 nil))))))))))
+                                       (prepend-step-limit
+                                        3
+                                        (try-type-set-and-clause
+                                         atm2
+                                         ans1 ttree ttree0 current-clause wrld
+                                         (access rewrite-constant rcnst
+                                                 :current-enabled-structure)
+                                         knownp)))))
+                               (t
+                                (mv step-limit ans1 ttree nil)))))))))))
 
 ; Now we develop the functions for finding trivial equivalence hypotheses and
 ; stuffing them into the clause, transforming {(not (equal n '27)) (p n x)},
@@ -5615,47 +5634,19 @@
                 (add-literal-and-pt1 cl0 pt cl pt-lst)
                 ttree)))))))
 
-(defun get-and-delete-tag-in-ttree (tag ttree)
-
-; Return (mv val new-ttree), where val is a non-nil value associated with tag
-; in ttree and new-ttree is the result of removing that association.  Except,
-; if tag is not associated with a non-nil value in ttree, then return (mv nil
-; ttree).  We avoid unnecessary consing.
-
-  (cond ((null ttree) (mv nil nil))
-        ((and (eq tag (caar ttree))
-              (caar ttree))
-         (mv (cdar ttree) (cdr ttree)))
-        ((symbolp (caar ttree))
-         (mv-let (val cdr-ttree)
-                 (get-and-delete-tag-in-ttree tag (cdr ttree))
-                 (cond (val (mv val (cons (car ttree) cdr-ttree)))
-                       (t (mv nil ttree)))))
-        (t (mv-let
-            (val car-ttree)
-            (get-and-delete-tag-in-ttree tag (car ttree))
-            (cond (val (mv val (cons car-ttree (cdr ttree))))
-                  (t (mv-let
-                      (val cdr-ttree)
-                      (get-and-delete-tag-in-ttree tag (cdr ttree))
-                      (cond (val (mv val (cons (car ttree) cdr-ttree)))
-                            (t (mv nil ttree))))))))))
-
 (defun add-binding-to-tag-tree (var term ttree)
 
 ; Note that var need not be a variable; see the call in fertilize-clause1.
 
-  (let ((tag 'binding-lst)
-        (binding (cons var term)))
-    (mv-let (lst ttree)
-            (get-and-delete-tag-in-ttree tag ttree)
-
-; The following is just (add-to-tag-tree tag (cons binding lst) ttree), but
-; optimized so that we don't waste time calling tag-tree-occur, since we know
-; that the tag does not occur in tttree, as binding-lst occurs at most once in
-; the input ttree.
-
-            (cons (cons tag (cons binding lst)) ttree))))
+  (let* ((tag 'binding-lst)
+         (binding (cons var term))
+         (old (tagged-object tag ttree)))
+    (cond (old (extend-tag-tree tag
+                                (list (cons binding old))
+                                (remove-tag-from-tag-tree! tag ttree)))
+          (t (extend-tag-tree tag
+                              (list (cons binding nil))
+                              ttree)))))
 
 (defun subst-equiv-and-maybe-delete-lit
   (equiv new old n cl i pt-lst delete-flg ens wrld state ttree)
@@ -6147,7 +6138,7 @@
 
                        (cond ((trivial-clause-p cl wrld) (mv t nil))
                              (t (mv nil nil))))
-                      ((tagged-object 'assumption ttree)
+                      ((tagged-objectsp 'assumption ttree)
                        (mv (er hard 'built-in-clausep
                                "It was thought that the forward-chain call in ~
                                 this function could not produce an ~
@@ -6283,41 +6274,37 @@
 ; ttree, rewriting them, and putting them back.  See
 ; resume-suspended-assumption-rewriting1, below, for the details.
 
-(defun strip-non-rewrittenp-assumptions (ttree ans)
+(defun strip-non-rewrittenp-assumptions1 (recs acc)
 
-; Copy ttree and strip out all 'assumption records that have :rewrittenp nil.
-; Accumulate those unrewritten records onto ans.  Return (mv ttree' ans').
+; See strip-non-rewrittenp-assumptions.  We move non-rewritten assumptions from
+; recs to acc to obtain recs' and acc, and return (mv recs' acc').
 
-; Picky Note: Some of the conses below are used in place of the official tag
-; tree constructors, e.g., (add-to-tag-tree 'assumption & &) and
-; (cons-tag-trees & &).  See the picky note in set-cl-ids-in-assumptions.
+  (cond ((endp recs) (mv nil acc))
+        (t (mv-let (rest acc)
+                   (strip-non-rewrittenp-assumptions1 (cdr recs) acc)
+                   (cond ((access assumption (car recs) :rewrittenp)
+                          (cond (acc ; a record was removed: (cdr recs) != rest
+                                 (mv (cons (car recs) rest)
+                                     acc))
+                                (t (mv recs nil))))
+                         (t (mv rest (cons (car recs) acc))))))))
 
-  (cond
-   ((null ttree) (mv nil ans))
-   ((symbolp (caar ttree))
-    (cond
-     ((eq (caar ttree) 'assumption)
-      (cond
-       ((not (access assumption (cdar ttree) :rewrittenp))
-        (strip-non-rewrittenp-assumptions (cdr ttree)
-                                          (cons (cdar ttree) ans)))
-       ((tagged-object 'assumption (cdr ttree))
-        (mv-let (ttree2 ans)
-                (strip-non-rewrittenp-assumptions (cdr ttree) ans)
-                (mv (cons (car ttree) ttree2) ans)))
-       (t (mv ttree ans))))
-     ((tagged-object 'assumption (cdr ttree))
-      (mv-let (ttree2 ans)
-              (strip-non-rewrittenp-assumptions (cdr ttree) ans)
-              (mv (cons (car ttree) ttree2) ans)))
-     (t (mv ttree ans))))
-   ((tagged-object 'assumption ttree)
-    (mv-let (ttree1 ans)
-            (strip-non-rewrittenp-assumptions (car ttree) ans)
-            (mv-let (ttree2 ans)
-                    (strip-non-rewrittenp-assumptions (cdr ttree) ans)
-                    (mv (cons-tag-trees ttree1 ttree2) ans))))
-   (t (mv ttree ans))))
+(defun strip-non-rewrittenp-assumptions (ttree)
+
+; Strip out all 'assumption records that have :rewrittenp nil and accumulate
+; them into ans.  Return (mv ttree' ans'), where ttree' is the result of
+; removing the records in ans from ttree.
+
+  (let ((recs (tagged-objects 'assumption ttree)))
+    (cond (recs
+           (let ((ttree0 (remove-tag-from-tag-tree! 'assumption ttree)))
+             (mv-let (rewritten unrewritten)
+                     (strip-non-rewrittenp-assumptions1 recs nil)
+                     (mv (cond (rewritten
+                                (extend-tag-tree 'assumption rewritten ttree0))
+                               (t ttree0))
+                         unrewritten))))
+          (t (mv ttree nil)))))
 
 (defun assumnote-list-to-token-list (assumnote-list)
   (if (null assumnote-list)
@@ -6354,7 +6341,7 @@
 ; would like rewritten and we are doing it.
 
   (cond
-   ((null assumptions) (mv step-limit nil ttree))
+   ((endp assumptions) (mv step-limit nil ttree))
    (t (let* ((assn (car assumptions))
              (term (access assumption assn :term)))
         (mv-let
@@ -6385,10 +6372,10 @@
               wrld state step-limit
               (if assumed-true
                   ttree
-                  (cons (cons 'assumption
-                              (change assumption assn
-                                      :rewrittenp term))
-                        ttree))))
+                (add-to-tag-tree 'assumption
+                                 (change assumption assn
+                                         :rewrittenp term)
+                                 ttree))))
           (t
 
 ; We are about to rewrite term, just as in relieve-hyp, and so we add its
@@ -6444,7 +6431,7 @@
 
                    (mv-let
                     (ttree1 assumptions1)
-                    (strip-non-rewrittenp-assumptions ttree1 nil)
+                    (strip-non-rewrittenp-assumptions ttree1)
 
 ; Observe that if ttree1 contains any assumptions, they are of the rewrittenp t
 ; variety.  We accumulate ttree1 into our answer ttree.  Unless term rewrote to
@@ -6495,23 +6482,11 @@
 ; ttree'.
 
   (mv-let (ttree assumptions)
-          (strip-non-rewrittenp-assumptions ttree nil)
+          (strip-non-rewrittenp-assumptions ttree)
           (resume-suspended-assumption-rewriting1
            assumptions
            ancestors gstack simplify-clause-pot-lst rcnst wrld state step-limit
            ttree)))
-
-(defun cons-into-ttree (ttree1 ttree2)
-  (cond
-   ((null ttree1) ttree2)
-   ((symbolp (caar ttree1))
-    (if (tag-tree-occur (caar ttree1) (cdar ttree1) ttree2)
-        (cons-into-ttree (cdr ttree1)
-                         ttree2)
-      (cons-into-ttree (cdr ttree1)
-                       (cons (car ttree1) ttree2))))
-   (t (cons-into-ttree (cdr ttree1)
-                       (cons-into-ttree (car ttree1) ttree2)))))
 
 ; Essay on Case Limit
 
@@ -6605,8 +6580,8 @@
 (mutual-recursion
 
 (defun rewrite-clause (tail pts bkptr gstack new-clause fc-pair-lst wrld
-                            simplify-clause-pot-lst
-                            rcnst flg ecnt ans ttree fttree state step-limit)
+                            simplify-clause-pot-lst rcnst flg ecnt ans ttree
+                            fttree splitp state step-limit)
 
 ; In nqthm this function was called SIMPLIFY-CLAUSE1.
 
@@ -6619,18 +6594,30 @@
 ; parents (via 'pt tags) and we may use any concl not dependent upon the
 ; literals contained in the :pt of rcnst (to which we add the current literal's
 ; pt).  Ecnt is the estimated number of output clauses.  We refine it as we go
-; and it is ultimately returned and is the length of of ans.  Fttree (``false
-; tag tree'') is either nil or else is a non-nil tag tree justifying the
+; and it is ultimately returned and is the length of ans.  Fttree (``false
+; tag-tree'') is either nil or else is a non-nil tag-tree justifying the
 ; falsity of every literal in new-clause; see the comment in rewrite-atm about
 ; the third argument returned by that function.  Note that it is always legal
 ; to return the false clause in place of any other clause, so our use of fttree
 ; is clearly sound.
 
-; We return 4 values: a flag indicating whether anything was done, the
-; final ecnt, a set, ans, of clauses whose conjunction implies cl
-; under our assumptions, and a ttree that describes what we did.  Our
-; answers are accumulated onto flg, ecnt, ans, and ttree as we recur
-; through the literals of tail.
+; We return 5 values: a new step-limit; a flag indicating whether anything was
+; done; the final ecnt; a set, ans, of clauses whose conjunction implies cl
+; under our assumptions; and a ttree that describes what we did.  Our answers
+; are accumulated onto flg, ecnt, ans, and ttree as we recur through the
+; literals of tail.
+
+; Finally, we comment on parameter splitp, which controls the rw-cache in the
+; case that the rw-cache-state is t.  (See the Essay on Rw-cache.)  This
+; parameter is true when we are part of a split into two or more clauses, which
+; case (if the rw-cache-state is t) we think of the split into children the way
+; we think of entering branches of an IF expression, discarding the "any" cache
+; since we do not trust its use in a stronger context.  If there is just one
+; child, our heuristic is to keep the rw-cache, with the (perhaps bold)
+; expectation that because there is no case-split, we can continue to trust its
+; full rw-cache.  While this assumption may be bold, it might be true in many
+; cases, and we are willing to make it since the default rw-cache-state is
+; :atom, not t.
 
   (cond
    ((null tail)
@@ -6707,8 +6694,12 @@
               ans
               (cons-tag-trees ttree0 ttree)))
          (t
-          (sl-let
-           (val ttree1 fttree1)
+          (let ((skip-rewrite-atm (and case-limit
+                                       (> ecnt case-limit)))
+                (rw-cache-state (access rewrite-constant rcnst
+                                        :rw-cache-state)))
+            (sl-let
+             (val ttree1 fttree1)
 
 ; Note: Nqthm used a call of (rewrite atm ...) here, while we now look on the
 ; type-alist for atm and then rewrite.  See the Nqthm note below.
@@ -6717,58 +6708,70 @@
 ; interpretation (2).  We just bail out if we have exceeded the case
 ; limit.
 
-           (if (and case-limit
-                    (> ecnt case-limit))
-               (mv step-limit
-                   atm
-                   (add-to-tag-tree 'case-limit t nil)
-                   nil)
-             (pstk
-              (rewrite-atm atm not-flg bkptr gstack type-alist wrld
-                           simplify-clause-pot-lst local-rcnst
-                           current-clause state step-limit)))
-           (let* ((val (if not-flg
-                           (dumb-negate-lit val)
-                         val))
-                  (branches (pstk
-                             (clausify val
-                                       (convert-clause-to-assumptions
-                                        (cdr tail)
-                                        (convert-clause-to-assumptions
-                                         new-clause nil))
-                                       nil
-                                       sr-limit)))
-                  (ttree1 (if (and sr-limit
-                                   (> (length branches)
-                                      sr-limit))
-                              (add-to-tag-tree 'sr-limit
-                                               t
-                                               ttree1)
-                            ttree1))
-                  (action (rewrite-clause-action (car tail) branches))
-                  (segs
+             (if skip-rewrite-atm
+                 (mv step-limit
+                     atm
+                     (add-to-tag-tree! 'case-limit t ttree)
+                     nil)
+               (pstk
+                (rewrite-atm atm not-flg bkptr gstack type-alist wrld
+                             simplify-clause-pot-lst local-rcnst
+                             current-clause state step-limit
+                             (cond ((eq rw-cache-state :atom)
+                                    (erase-rw-cache ttree))
+                                   ((and (eq rw-cache-state t)
+                                         splitp)
+                                    (rw-cache-enter-context ttree))
+                                   (t ttree)))))
+             (let* ((ttree1 (cond (skip-rewrite-atm ttree1)
+                                  ((eq rw-cache-state :atom)
+                                   (erase-rw-cache ttree1))
+                                  ((and (eq rw-cache-state t)
+                                        splitp)
+                                   (rw-cache-exit-context ttree ttree1))
+                                  (t ttree1)))
+                    (val (if not-flg
+                             (dumb-negate-lit val)
+                           val))
+                    (branches (pstk
+                               (clausify val
+                                         (convert-clause-to-assumptions
+                                          (cdr tail)
+                                          (convert-clause-to-assumptions
+                                           new-clause nil))
+                                         nil
+                                         sr-limit)))
+                    (ttree1 (if (and sr-limit
+                                     (> (length branches)
+                                        sr-limit))
+                                (add-to-tag-tree 'sr-limit
+                                                 t
+                                                 ttree1)
+                              ttree1))
+                    (action (rewrite-clause-action (car tail) branches))
+                    (segs
 
 ; Perhaps we can simply use branches below.  But that requires some thought,
 ; because the form below handles true clauses (including *true-clause*) with
 ; special care.  This issue arose as we removed old-style-forcing from the
 ; code.
 
-                   (disjoin-clause-segment-to-clause-set nil branches))
-                  (nsegs (length segs)))
-             (sl-let
-              (bad-ass ttree1)
-              (resume-suspended-assumption-rewriting
-               ttree1
-               nil ;ancestors - the fact that this isn't what it was when
-                   ;we pushed the assumption could let rewriting go deeper
-               gstack
-               simplify-clause-pot-lst
-               local-rcnst
-               wrld
-               state
-               step-limit)
-              (cond
-               (bad-ass
+                     (disjoin-clause-segment-to-clause-set nil branches))
+                    (nsegs (length segs)))
+               (sl-let
+                (bad-ass ttree1)
+                (resume-suspended-assumption-rewriting
+                 ttree1
+                 nil ;ancestors - the fact that this isn't what it was when
+;we pushed the assumption could let rewriting go deeper
+                 gstack
+                 simplify-clause-pot-lst
+                 local-rcnst
+                 wrld
+                 state
+                 step-limit)
+                (cond
+                 (bad-ass
 
 ; When we rewrote the current literal of the clause we made an assumption
 ; that we now know to be false.  We must abandon that rewrite.  We
@@ -6776,51 +6779,52 @@
 ; done the rewrite-atm above and obtained atm instead of val.  We just
 ; reproduce the code, except we don't worry about assumptions.
 
-                (let* ((val (if not-flg (dumb-negate-lit atm) atm))
-                       (branches (pstk
-                                  (clausify val
-                                            (convert-clause-to-assumptions
-                                             (cdr tail)
-                                             (convert-clause-to-assumptions
-                                              new-clause nil))
-                                            nil
-                                            sr-limit)))
-                       (ttree2 (if (and sr-limit
-                                        (> (length branches)
-                                           sr-limit))
-                                   (add-to-tag-tree 'sr-limit
-                                                    t
-                                                    ttree)
-                                 ttree))
-                       (action (rewrite-clause-action (car tail) branches))
-                       (segs branches)
-                       (nsegs (length segs)))
+                  (let* ((val (if not-flg (dumb-negate-lit atm) atm))
+                         (branches (pstk
+                                    (clausify val
+                                              (convert-clause-to-assumptions
+                                               (cdr tail)
+                                               (convert-clause-to-assumptions
+                                                new-clause nil))
+                                              nil
+                                              sr-limit)))
+                         (ttree2 (if (and sr-limit
+                                          (> (length branches)
+                                             sr-limit))
+                                     (add-to-tag-tree 'sr-limit
+                                                      t
+                                                      ttree)
+                                   ttree))
+                         (action (rewrite-clause-action (car tail) branches))
+                         (segs branches)
+                         (nsegs (length segs)))
 
 ; For an explanation of the following call of rewrite-clause-lst, see
 ; the standard call below.  This is just like it, except we are ignoring
 ; ttree1.  Note that ttree2 is an extension of ttree.
 
-                  (rewrite-clause-lst segs
-                                      (1+ bkptr)
-                                      gstack
-                                      (cdr tail)
-                                      (cdr pts)
-                                      new-clause
-                                      fc-pair-lst
-                                      wrld
-                                      simplify-clause-pot-lst
-                                      (if (eq action 'shown-false)
-                                          local-rcnst
-                                        rcnst)
-                                      (or flg (not (eq action 'no-change)))
-                                      (helpful-little-ecnt-msg
-                                       case-limit
-                                       (+ ecnt -1 nsegs))
-                                      ans
-                                      ttree2
-                                      nil ; literal is not known to be false
-                                      state
-                                      step-limit)))
+                    (rewrite-clause-lst segs
+                                        (1+ bkptr)
+                                        gstack
+                                        (cdr tail)
+                                        (cdr pts)
+                                        new-clause
+                                        fc-pair-lst
+                                        wrld
+                                        simplify-clause-pot-lst
+                                        (if (eq action 'shown-false)
+                                            local-rcnst
+                                          rcnst)
+                                        (or flg (not (eq action 'no-change)))
+                                        (helpful-little-ecnt-msg
+                                         case-limit
+                                         (+ ecnt -1 nsegs))
+                                        ans
+                                        ttree2
+                                        nil ; literal is not known to be false
+                                        (cdr segs) ; splitp
+                                        state
+                                        step-limit)))
 
 ; Here, once upon a time, we implemented the ``creep up on the limit''
 ; twist of case limit interpretation (3).  Instead of short-circuiting
@@ -6851,20 +6855,20 @@
 ; has been exceeded, we no longer implement this creepy idea.
 ; Instead, we just blast past the limit and then shut 'er down.
 
-               (t
+                 (t
 
 ; In the case that there is no bad assumption, then ttree1 is a ttree in which
 ; all assumptions have been rewritten.
 
-                (rewrite-clause-lst segs
-                                    (1+ bkptr)
-                                    gstack
-                                    (cdr tail)
-                                    (cdr pts)
-                                    new-clause
-                                    fc-pair-lst
-                                    wrld
-                                    simplify-clause-pot-lst
+                  (rewrite-clause-lst segs
+                                      (1+ bkptr)
+                                      gstack
+                                      (cdr tail)
+                                      (cdr pts)
+                                      new-clause
+                                      fc-pair-lst
+                                      wrld
+                                      simplify-clause-pot-lst
 
 ; If the current lit rewrote to false, or even if it rewrote at all
 ; (since critical information may be lost), then we should continue to
@@ -6892,11 +6896,11 @@
 ;                    (<= 30 n))
 ;               (foo n)))
 
-                                    (if (eq action 'no-change)
-                                        rcnst
-                                      local-rcnst)
-                                    (or flg
-                                        (not (eq action 'no-change)))
+                                      (if (eq action 'no-change)
+                                          rcnst
+                                        local-rcnst)
+                                      (or flg
+                                          (not (eq action 'no-change)))
 
 ; Prior to this literal, we estimated the number of output clauses to
 ; be ecnt.  This literal of this clause rewrote to nsegs segments.  So
@@ -6915,26 +6919,35 @@
 ; too large and kick in even though some of the previous splitting was
 ; tautologous.  
 
-                                    (helpful-little-ecnt-msg
-                                     case-limit
-                                     (+ ecnt -1 nsegs))
-                                    ans
-                                    (if (eq action 'no-change)
-                                        ttree
-                                      (cons-into-ttree ttree1 ttree))
-                                    (and fttree1
-                                         fttree
-                                         (cons-tag-trees fttree1 fttree))
-                                    state
-                                    step-limit))))))))))))))
+                                      (helpful-little-ecnt-msg
+                                       case-limit
+                                       (+ ecnt -1 nsegs))
+                                      ans
+                                      (if (eq action 'no-change)
+                                          (if (eq rw-cache-state :atom)
+                                              ttree
+                                            (accumulate-rw-cache t
+                                                                 ttree1
+                                                                 ttree))
+                                        ttree1)
+                                      (and fttree1
+                                           fttree
+                                           (cons-tag-trees fttree1 fttree))
+                                      (cdr segs) ; splitp
+                                      state
+                                      step-limit)))))))))))))))
 
 (defun rewrite-clause-lst (segs bkptr gstack cdr-tail cdr-pts new-clause
                                 fc-pair-lst wrld simplify-clause-pot-lst rcnst
-                                flg ecnt ans ttree fttree state step-limit)
+                                flg ecnt ans ttree fttree splitp state
+                                step-limit)
 
-; Fttree is either nil or else is a tag tree justifying the falsity of every
+; Fttree is either nil or else is a tag-tree justifying the falsity of every
 ; literal in segs and every literal in new-clause; see the comment in
 ; rewrite-atm about the third argument returned by that function.
+
+; Splitp is true when we do not want to trust the "any" cache of ttree; for
+; more explanation, see rewrite-clause.
 
   (cond ((null segs)
          (mv step-limit flg ecnt ans ttree))
@@ -6955,6 +6968,7 @@
                                ans
                                ttree
                                fttree
+                               splitp
                                state
                                step-limit)
            (mv-let (unrewritten unwritten-pts rewritten ttree2)
@@ -6981,6 +6995,7 @@
                                    ans1
                                    ttree2
                                    fttree
+                                   splitp
                                    state
                                    step-limit))))))
 
@@ -6997,7 +7012,7 @@
                                         nil cl)))
             (rewrite-entry
              (add-terms-and-lemmas cl ;term-lst to assume
-                                   ttrees ;corresponding tag trees
+                                   ttrees ;corresponding tag-trees
                                    nil ;positivep (terms assumed false)
                                    )
              :rdepth (rewrite-stack-limit wrld)
@@ -7026,24 +7041,22 @@
 (defun setup-simplify-clause-pot-lst (cl ttrees fc-pair-lst
                                       type-alist rcnst wrld state step-limit)
 
-; We construct the initial value of the simplify-clause-pot-lst in
-; preparation for rewriting clause cl.  We assume rcnst contains the
-; user's hint settings, the correct top-clause and current clause, and a
-; null :pt.
+; We construct the initial value of the simplify-clause-pot-lst in preparation
+; for rewriting clause cl.  We assume rcnst contains the user's hint settings,
+; the correct top-clause and current clause, and a null :pt.
 
-; We return two values.  If the first is non-nil it indicates that we
-; have proved cl and the other value is irrelevant.  In the case that we
-; prove clause the first result is a poly, meaning it was proved by
-; linear arithmetic.  The assumptions in the ttree of that poly must be
-; considered before cl is declared proved.  When the first answer is nil
-; the second is the constructed simplify-clause-pot-lst.
+; We return three values.  The first is a new step-limit.  If the second is
+; non-nil it indicates that we have proved cl and the other value is
+; irrelevant.  In the case that we prove clause the second result is a poly,
+; meaning it was proved by linear arithmetic.  The assumptions in the ttree of
+; that poly must be considered before cl is declared proved.  When the second
+; answer is nil the third is the constructed simplify-clause-pot-lst.
 
-; As of Version_2.8, we start by adding the (negations of) any
-; forward-chaining conclusions to the head of cl and the corresponding
-; ttrees to ttrees.  We then call the original
-; setup-simplify-clause-pot-lst on the resultant expanded clause.
-; This will allow us to use forward-chaining conclusions in linear
-; arithmetic.
+; As of Version_2.8, we start by adding the (negations of) any forward-chaining
+; conclusions to the head of cl and the corresponding ttrees to ttrees.  We
+; then call the original setup-simplify-clause-pot-lst on the resultant
+; expanded clause.  This will allow us to use forward-chaining conclusions in
+; linear arithmetic.
 
 ; Here is one example of why we might want to do this:
 
@@ -7072,14 +7085,13 @@
 ;                 (bytep (+ 7 n)))
 ;            (bytep (+ 3 n))))
 
-; Before linear arithmetic used the conclusions of forward-chaining
-; rules, one would have to re-enable the definition of bytep in order
-; to prove tricky.  But if this appeared in a larger context, in which
-; one had proved a bunch of lemmas about bytep, one could find oneself
-; in a pickle.  By enabling bytep, one loses the ability to use all
-; the lemmas about it.  Without enabling bytep, tricky is hard to
-; prove.
-;
+; Before linear arithmetic used the conclusions of forward-chaining rules, one
+; would have to re-enable the definition of bytep in order to prove tricky.
+; But if this appeared in a larger context, in which one had proved a bunch of
+; lemmas about bytep, one could find oneself in a pickle.  By enabling bytep,
+; one loses the ability to use all the lemmas about it.  Without enabling
+; bytep, tricky is hard to prove.
+
 ; And here is another example:
 
 ;  (defun bvecp (x n)
@@ -7321,8 +7333,8 @@
               (tag-tree-occur 'literal lit
                               (access history-entry (car hist) :ttree)))
          (or get-clause-id
-             (cdr (tagged-object 'clause-id (access history-entry (car hist)
-                                                    :ttree)))))
+             (tagged-object 'clause-id (access history-entry (car hist)
+                                              :ttree))))
         (t (already-used-by-fertilize-clausep lit (cdr hist) get-clause-id))))
 
 (defun unhidden-lit-info (hist clause pos wrld)
@@ -7377,19 +7389,17 @@
 
 ; In Nqthm, this function was called SIMPLIFY-CLAUSE0.
 
-; Top-clause is a clause with history hist.  We assume that rcnst has
-; a null pt and contains whatever hint settings the user
-; wants in it, as well as the :force-info based on whether there is a
-; call of IF in top-clause.
+; Top-clause is a clause with history hist.  We assume that rcnst has a null pt
+; and contains whatever hint settings the user wants in it, as well as the
+; :force-info based on whether there is a call of IF in top-clause.
 
-; We return 3 values.  The first indicates whether we changed top-clause and,
-; if so, whether we went through the rewriter; it will help determine signal
-; returned by simplify-clause (and hence will be used, ultimately, to create
-; the 'simplify-clause hist entry).  If we did not change top-clause, the
-; second and third are nil.  If we did change top-clause, the second is a list
-; of new clauses whose conjunction implies top-clause and the third is a ttree
-; explaining what we did.  This ttree will be used to create the
-; 'simplify-clause hist entry.
+; We return 4 values.  The first is a new step-limit.  The next indicates
+; whether we changed top-clause and, if so, whether we went through the
+; rewriter; it will help determine signal returned by simplify-clause (and
+; hence will be used, ultimately, to create the 'simplify-clause hist entry).
+; If we did not change top-clause, the third is; otherwise, it is a list of new
+; clauses whose conjunction implies top-clause.  The last argument is a ttree
+; that explains what we did, and is used in the 'simplify-clause hist entry.
 
   (mv-let (hitp current-clause pts remove-trivial-equivalences-ttree)
           (remove-trivial-equivalences top-clause
@@ -7434,8 +7444,9 @@
                (mv step-limit
                    'hit
                    nil
-                   (cons-tag-trees remove-trivial-equivalences-ttree
-                                   fc-pair-lst)))
+                   (cons-tag-trees
+                    remove-trivial-equivalences-ttree
+                    fc-pair-lst)))
               (t
 
 ; We next construct the initial simplify-clause-pot-lst.
@@ -7456,7 +7467,7 @@
                  (contradictionp
 
 ; A non-nil contradictionp is a poly meaning linear proved current-clause
-; (modulo the assumptions in the tag tree of the poly).
+; (modulo the assumptions in the tag-tree of the poly).
 
                   (mv step-limit
                       'hit
@@ -7522,6 +7533,7 @@
                                       nil
                                       remove-trivial-equivalences-ttree
                                       *trivial-non-nil-ttree*
+                                      nil ; splitp
                                       state
                                       step-limit)
                       (declare (ignore ecnt))
@@ -7537,15 +7549,15 @@
                                           (list (append (take pos top-clause)
                                                         (cons unhidden-lit
                                                               tail)))
-                                          (add-to-tag-tree
+                                          (add-to-tag-tree!
                                            'hyp-phrase
                                            (tilde-@-hyp-phrase (len tail)
                                                                top-clause)
-                                           (add-to-tag-tree
+                                           (add-to-tag-tree!
                                             'clause-id old-cl-id
                                             (push-lemma (fn-rune-nume 'hide nil
                                                                       nil wrld)
-                                                        nil))))))
+                                                        (rw-cache ttree)))))))
                                (t (mv step-limit nil ans ttree)))))
                        (t
                         #-acl2-loop-only (dmr-flush t)
@@ -7565,6 +7577,10 @@
 ; bundle of variables.  So it is time to lay out prove's spec vars:
 
 (defrec prove-spec-var
+
+; Warning: Keep this in sync with #+acl2-par function
+; pspv-equal-except-for-tag-tree-and-pool.
+
   ((rewrite-constant induction-hyp-terms . induction-concl-terms)
    (tag-tree . hint-settings)
    (pool . gag-state)
@@ -7698,119 +7714,123 @@
 ; Warning: Keep this in sync with function simplify-clause-rcnst defined in
 ; books/misc/computed-hint-rewrite.lisp.
 
-; This is the first "clause processor" of the waterfall.  Its input and
-; output spec is consistent with that of all such processors.  See the
-; waterfall for a general discussion.
+; This is a "clause processor" of the waterfall.  Its input and output spec is
+; consistent with that of all such processors.  See the waterfall for a general
+; discussion.
 
-; Cl is a clause with history hist.  We can obtain a rewrite-constant
-; from the prove spec var pspv.  We assume nothing about the
-; rewrite-constant except that it has the user's hint settings in it
-; and that the pt is nil.  We install our top-clause and
-; current-clause when necessary.
+; Cl is a clause with history hist.  We can obtain a rewrite-constant from the
+; prove spec var pspv.  We assume nothing about the rewrite-constant except
+; that it has the user's hint settings in it and that the pt is nil.  We
+; install our top-clause and current-clause when necessary.
 
-; We return 4 values.  The first is a signal that in general is 'miss,
-; 'abort, 'error, or a "hit".  In this case, it is always either 'miss
-; or one of 'hit, 'hit-rewrite, or 'hit-rewrite2 (as described further
-; below).  When the signal is 'miss, the other 3 values are
-; irrelevant.  When the signal is 'hit, the second result is the list
-; of new clauses, the third is a ttree that will become that component
-; of the history-entry for this simplification, and the fourth is the
-; unmodified pspv.  (We return the fourth thing to adhere to the
-; convention used by all clause processors in the waterfall (q.v.).)
+; We return five values.  The first is a new step-limit.  The second is a
+; signal that in general is 'miss, 'abort, 'error, or a "hit".  In this case,
+; it is always either 'miss or one of 'hit, 'hit-rewrite, or 'hit-rewrite2 (as
+; described further below).  When the signal is 'hit, the third result is the
+; list of new clauses, the fourth is a ttree that will become that component of
+; the history-entry for this simplification, and the fifth is the unmodified
+; pspv.  (We return the fifth thing to adhere to the convention used by all
+; clause processors in the waterfall (q.v.).)  When the signal is 'miss, the
+; third and fifth results are irrelevant, but we return a ttree whose rw-cache
+; may extend the ttree of the input pspv.
 
-; If the first result is a "hit" then the conjunction of the new
-; clauses returned implies cl.  Equivalently, under the assumption
-; that cl is false, cl is equivalent to the conjunction of the new
-; clauses.
+; If the second result is a "hit" then the conjunction of the new clauses
+; returned implies cl.  Equivalently, under the assumption that cl is false, cl
+; is equivalent to the conjunction of the new clauses.
 
 ; On Tail Biting by Simplify-clause:
 
-; Tail biting can occur at the simplify-clause level, i.e., we can
-; return a set of clauses that is a generalization of the clause cl,
-; e.g., a set whose conjunction is false even though cl is not.  This
-; is because of the way we manage the simplify-clause-pot-lst and
-; pts.  We build a single pot-lst and use parent trees to
-; render inactive those polys that we wish to avoid.  To arrange to
-; bite our own tail, put two slightly different versions of the same
-; inequality literal into cl.  The poly arising from the second can be
-; used to rewrite the first and the poly arising from first can be used
-; to rewrite the second.  If the first rewrites to false immediately our
-; use of parent trees (as arranged by passing local-rcnst to the recursive
-; call of rewrite-clause in rewrite-clause) will wisely prevent the use of
-; its poly while rewriting the second.  But if the first rewrites to some
-; non-linear term (which will be rewritten to false later) then we'll
-; permit ourselves to use the first's poly while working on the second
-; and we could bite our tail.
+; Tail biting can occur at the simplify-clause level, i.e., we can return a set
+; of clauses that is a generalization of the clause cl, e.g., a set whose
+; conjunction is false even though cl is not.  This is because of the way we
+; manage the simplify-clause-pot-lst and pts.  We build a single pot-lst and
+; use parent trees to render inactive those polys that we wish to avoid.  To
+; arrange to bite our own tail, put two slightly different versions of the same
+; inequality literal into cl.  The poly arising from the second can be used to
+; rewrite the first and the poly arising from first can be used to rewrite the
+; second.  If the first rewrites to false immediately our use of parent trees
+; (as arranged by passing local-rcnst to the recursive call of rewrite-clause
+; in rewrite-clause) will wisely prevent the use of its poly while rewriting
+; the second.  But if the first rewrites to some non-linear term (which will be
+; rewritten to false later) then we'll permit ourselves to use the first's poly
+; while working on the second and we could bite our tail.
 
-; This would not happen if we produced a new linear pot-lst for each
-; literal -- a pot-lst in which the literal to be rewritten was not
-; assumed false.  Early experiments with that approach led us to
-; conclude it was too expensive.
+; This would not happen if we produced a new linear pot-lst for each literal --
+; a pot-lst in which the literal to be rewritten was not assumed false.  Early
+; experiments with that approach led us to conclude it was too expensive.
 
-; If the specification of rewrite is correct, then tail biting cannot
-; happen except via the involvement of linear arithmetic.  To see this,
-; consider the assumptions governing the rewriting of each literal in the
-; clause and ask whether the literal being rewritten in in rewrite-clause
-; is assumed false via any of those assumptions.  There are five sources
-; of assumptions in the specification of rewrite: (a) the type-alist
-; (which is constructed so as to avoid that literal), (b) the assumptions
-; in ancestors (which is initially empty), (c) the assumptions in the
-; pot-lst (which we are excepting), and (d) 'assumptions in ttree
-; (which we are excepting).  Thus, the only place that assumption might
-; be found is simplify-clause-pot-lst.  If linear is eliminated, the only
-; assumptions left are free of the literal being worked on.
+; If the specification of rewrite is correct, then tail biting cannot happen
+; except via the involvement of linear arithmetic.  To see this, consider the
+; assumptions governing the rewriting of each literal in the clause and ask
+; whether the literal being rewritten in in rewrite-clause is assumed false via
+; any of those assumptions.  There are five sources of assumptions in the
+; specification of rewrite: (a) the type-alist (which is constructed so as to
+; avoid that literal), (b) the assumptions in ancestors (which is initially
+; empty), (c) the assumptions in the pot-lst (which we are excepting), and (d)
+; 'assumptions in ttree (which we are excepting).  Thus, the only place that
+; assumption might be found is simplify-clause-pot-lst.  If linear is
+; eliminated, the only assumptions left are free of the literal being worked
+; on.
 
-; This is really an interface function between the rewriter and the rest of
-; the prover.  It has three jobs.
+; This is really an interface function between the rewriter and the rest of the
+; prover.  It has three jobs.
 
-; The first is to convert from the world of pspv to the world of
-; rcnst.  That is, from the package of spec vars passed around in the
-; waterfall to the package of constants known to the rewriter.
+; The first is to convert from the world of pspv to the world of rcnst.  That
+; is, from the package of spec vars passed around in the waterfall to the
+; package of constants known to the rewriter.
 
 ; The second job of this function is to control the expansion of the
-; induction-hyp-terms and induction-concl terms (preventing the
-; expansion of the former and forcing the expansion of the latter) by
-; possibly adding them to terms-to-be-ignored-by-rewrite and
-; expand-lst, respectively.  This is done as part of the conversion
-; from pspv (where induction hyps and concl are found) to rcnst (where
-; terms-to-be-ignored-by-rewrite and expand-lst are found).  They are
-; so controlled as long as we are in the first simplification stages
-; after induction.  As soon as the clause has gone through the
-; rewriter with some change, with input free of induction-concl-terms,
-; we stop interfering.  The real work horse of clause level
-; simplification is simplify-clause1.
+; induction-hyp-terms and induction-concl terms (preventing the expansion of
+; the former and forcing the expansion of the latter) by possibly adding them
+; to terms-to-be-ignored-by-rewrite and expand-lst, respectively.  This is done
+; as part of the conversion from pspv (where induction hyps and concl are
+; found) to rcnst (where terms-to-be-ignored-by-rewrite and expand-lst are
+; found).  They are so controlled as long as we are in the first simplification
+; stages after induction.  As soon as the clause has gone through the rewriter
+; with some change, with input free of induction-concl-terms, we stop
+; interfering.  The real work horse of clause level simplification is
+; simplify-clause1.
 
-; The third job is to convert the simplify-clause1 answers into the
-; kind required by a clause processor in the waterfall.  The work
-; horse doesn't return an pspv and we do.
+; The third job is to convert the simplify-clause1 answers into the kind
+; required by a clause processor in the waterfall.  The work horse doesn't
+; return an pspv and we do.
 
  (prog2$
   (initialize-brr-stack state)
   (cond ((assoc-eq 'settled-down-clause hist)
 
-; The clause has settled down under rewriting with the
-; induction-hyp-terms initially ignored and the induction-concl-terms
-; forcibly expanded.  In general, we now want to stop treating those
-; terms specially and continue simplifying.  However, there is a
-; special case that will save a little time.  Suppose that the clause
-; just settled down -- i.e., the most recent hist entry is the one we
-; just found.  And suppose that none of the specially treated terms
-; occurs in the clause we're to simplify.  Then we needn't simplify it
+; The clause has settled down under rewriting with the induction-hyp-terms
+; initially ignored and the induction-concl-terms forcibly expanded.  In
+; general, we now want to stop treating those terms specially and continue
+; simplifying.  However, there is a special case that will save a little time.
+; Suppose that the clause just settled down -- i.e., the most recent hist entry
+; is the one we just found.  And suppose that none of the specially treated
+; terms occurs in the clause we're to simplify.  Then we needn't simplify it
 ; again.
 
          (cond ((and (eq 'settled-down-clause
                          (access history-entry (car hist) :processor))
+
+; If the rw-cache-state is :disabled immediately after a hit from
+; settled-down-clause, then we want to do the work of making a "desperation"
+; attempt at simplification.
+
+                     (not (eq (access rewrite-constant
+                                      (access prove-spec-var pspv
+                                              :rewrite-constant)
+                                      :rw-cache-state)
+                              :disabled))
                      (not (some-element-dumb-occur-lst
                            (access prove-spec-var
                                    pspv
                                    :induction-hyp-terms)
                            cl)))
 
-; Since we know the induction-concl-terms couldn't occur in the clause
-; -- they would have been expanded -- we are done.  (Or at least: if
-; they do occur in the clause, then still, removing them from the
-; expand-lst should not help the rewriter!)  This test should speed up
-; base cases and preinduction simplification at least.
+; Since we know the induction-concl-terms couldn't occur in the clause -- they
+; would have been expanded -- we are done.  (Or at least: if they do occur in
+; the clause, then still, removing them from the expand-lst should not help the
+; rewriter!)  This test should speed up base cases and preinduction
+; simplification at least.
 
                 (mv step-limit 'miss nil nil nil))
                (t
@@ -7832,24 +7852,23 @@
                          step-limit)
                         (cond (changedp
 
-; Note: It is possible that our input, cl, is a member-equal of our
-; output, clauses!  Such simplifications are said to be "specious."
-; But we do not bother to detect that here because we want to report
-; the specious simplification as though everything were ok and then
-; pretend nothing happened.  This gives the user some indication of
-; where the loop is.  In the old days, we just signalled a 'miss if
-; (member-equal cl clauses) and that caused a lot of confusion among
-; experienced users, who saw simplifiable clauses being passed on to
-; elim, etc.  See :DOC specious-simplification.
+; Note: It is possible that our input, cl, is a member-equal of our output,
+; clauses!  Such simplifications are said to be "specious."  But we do not
+; bother to detect that here because we want to report the specious
+; simplification as though everything were ok and then pretend nothing
+; happened.  This gives the user some indication of where the loop is.  In the
+; old days, we just signalled a 'miss if (member-equal cl clauses) and that
+; caused a lot of confusion among experienced users, who saw simplifiable
+; clauses being passed on to elim, etc.  See :DOC specious-simplification.
 
                                (mv step-limit 'hit clauses ttree pspv))
-                              (t (mv step-limit 'miss nil nil nil)))))))
+                              (t (mv step-limit 'miss nil ttree nil)))))))
         (t
 
 ; The clause has not settled down yet.  So we arrange to ignore the
-; induction-hyp-terms when appropriate, and to expand the
-; induction-concl-terms without question.  The local-rcnst created
-; below is not passed out of this function.
+; induction-hyp-terms when appropriate, and to expand the induction-concl-terms
+; without question.  The local-rcnst created below is not passed out of this
+; function.
 
          (let* ((rcnst (access prove-spec-var pspv :rewrite-constant))
                 (new-force-info (if (ffnnamep-lst 'if cl)
@@ -7870,26 +7889,24 @@
                 (local-rcnst
                  (cond (hit-rewrite2
 
-; We have previously passed through the rewriter, and either a
-; predecessor goal or this one is free of induction-concl-terms.  In
-; that case we stop meddling with the rewriter by inhibiting rewriting
-; of induction-hyp-terms and forcing expansion of
-; induction-concl-terms.  Before Version_2.8 we waited until
-; 'settled-down-clause before ceasing our meddling.  However, Dave
-; Greve and Matt Wilding reported an example in which that heuristic
-; slowed down the prover substantially by needlessly delaying the
-; rewriting of induction-hyp-terms.  Notice that this heuristic nicely
-; matches the induction heuristics: both consider only the goal, not
-; the result of rewriting it.  (We however ignore rewriting by
-; preprocess-clause for the present purpose: we want to wait for a
-; full-blown rewrite before allowing rewriting of
+; We have previously passed through the rewriter, and either a predecessor goal
+; or this one is free of induction-concl-terms.  In that case we stop meddling
+; with the rewriter by inhibiting rewriting of induction-hyp-terms and forcing
+; expansion of induction-concl-terms.  Before Version_2.8 we waited until
+; 'settled-down-clause before ceasing our meddling.  However, Dave Greve and
+; Matt Wilding reported an example in which that heuristic slowed down the
+; prover substantially by needlessly delaying the rewriting of
+; induction-hyp-terms.  Notice that this heuristic nicely matches the induction
+; heuristics: both consider only the goal, not the result of rewriting it.  (We
+; however ignore rewriting by preprocess-clause for the present purpose: we
+; want to wait for a full-blown rewrite before allowing rewriting of
 ; induction-hyp-terms.)
 
-; Initially we attempted to fix the slowdown mentioned above (the one
-; reported by Greve and Wilding) by eliminating completely the special
-; treatment of induction-hyp-terms.  However, lemma
-; psuedo-termp-binary-op_tree in books/meta/pseudo-termp-lemmas.lisp
-; showed the folly of this attempt.  The relevant goal was as follows.
+; Initially we attempted to fix the slowdown mentioned above (the one reported
+; by Greve and Wilding) by eliminating completely the special treatment of
+; induction-hyp-terms.  However, lemma psuedo-termp-binary-op_tree in
+; books/meta/pseudo-termp-lemmas.lisp showed the folly of this attempt.  The
+; relevant goal was as follows.
 
 ; Subgoal *1/5'
 ; (IMPLIES (AND (CONSP L)
@@ -7905,23 +7922,21 @@
 ;          (PSEUDO-TERMP (BINARY-OP_TREE BINARY-OP-NAME
 ;                                        CONSTANT-NAME FIX-NAME L)))
 
-; In this case induction-hyp-terms contained the single term
-; (binary-op_tree binary-op-name constant-name fix-name (cdr l)).
-; Without special treatment of induction-hyp-terms, the above
-; binary-op_tree term was rewritten, and hence so was the pseudo-termp
-; hypothesis.  The result seemed to give permission to the next
-; hypothesis, (pseudo-term-listp l), to be rewritten much more
-; agressively than it was formerly, which bogged down the rewriter
-; (perhaps even in an infinite loop).
+; In this case induction-hyp-terms contained the single term (binary-op_tree
+; binary-op-name constant-name fix-name (cdr l)).  Without special treatment of
+; induction-hyp-terms, the above binary-op_tree term was rewritten, and hence
+; so was the pseudo-termp hypothesis.  The result seemed to give permission to
+; the next hypothesis, (pseudo-term-listp l), to be rewritten much more
+; agressively than it was formerly, which bogged down the rewriter (perhaps
+; even in an infinite loop).
 
-; A later attempt used the simple algorithm that we stop meddling once
-; we have made a pass through the rewriter, even if there are still
+; A later attempt used the simple algorithm that we stop meddling once we have
+; made a pass through the rewriter, even if there are still
 ; induction-concl-terms around.  Lemma flip-eq-subst-commute in
-; books/workshops/1999/ivy/ivy-v2/ivy-sources/flip.lisp showed the
-; problem with that approach.  Subgoal *1/2' below was produced by
-; preprocess-clause.  It produces goal Subgoal *1/2.16, which has a
-; new occurrence in the conclusion of the induction-concl-term
-; (SUBST-FREE F X TM):
+; books/workshops/1999/ivy/ivy-v2/ivy-sources/flip.lisp showed the problem with
+; that approach.  Subgoal *1/2' below was produced by preprocess-clause.  It
+; produces goal Subgoal *1/2.16, which has a new occurrence in the conclusion
+; of the induction-concl-term (SUBST-FREE F X TM):
 
 ;  Subgoal *1/2'
 ;  (IMPLIES (AND (NOT (WFNOT F))
@@ -7970,25 +7985,23 @@
 ;                        (SUBST-FREE (CADR F) X TM)
 ;                        (SUBST-FREE (CADDR F) X TM))))
 
-; If we stop meddling after Subgoal *1/2', then hypothesis rewriting
-; in Subgoal *1/2.16 is so severe that we are subject to
-; case-split-limitations and never reach the conclusion!  If memory
-; serves, an attempt to turn off case-split-limitations just led the
-; prover off the deep end.
+; If we stop meddling after Subgoal *1/2', then hypothesis rewriting in Subgoal
+; *1/2.16 is so severe that we are subject to case-split-limitations and never
+; reach the conclusion!  If memory serves, an attempt to turn off
+; case-split-limitations just led the prover off the deep end.
 
                         (change rewrite-constant
                                 rcnst
                                 :force-info new-force-info
 
-; We also tried a modification in which we use the same :expand-lst as
-; below, thus continuing to meddle with induction-concl-terms even
-; after we are done meddling with induction-hyp-terms.  However, that
-; caused problems with, for example, the proof of exponents-add-1 in
-; books/arithmetic-2/pass1/expt-helper.lisp.  Apparently the forced
-; expansion of (EXPT R J) looped with rule exponents-add-2 (rewriting
-; r^(i+j)).  At any rate, it seems reasonable enough to keep
-; suppression of induction-hyp-terms rewriting in sync with forced
-; expansion of induction-concl-terms.
+; We also tried a modification in which we use the same :expand-lst as below,
+; thus continuing to meddle with induction-concl-terms even after we are done
+; meddling with induction-hyp-terms.  However, that caused problems with, for
+; example, the proof of exponents-add-1 in
+; books/arithmetic-2/pass1/expt-helper.lisp.  Apparently the forced expansion
+; of (EXPT R J) looped with rule exponents-add-2 (rewriting r^(i+j)).  At any
+; rate, it seems reasonable enough to keep suppression of induction-hyp-terms
+; rewriting in sync with forced expansion of induction-concl-terms.
 
 ; And we tried one more idea: removing the test on whether the clause had been
 ; rewritten.  We got one failure, on collect-times-3b in v2-8 in
@@ -8045,7 +8058,7 @@
                     (hitp (mv step-limit
                               (if hit-rewrite2 'hit-rewrite2 hitp)
                               clauses ttree pspv))
-                    (t (mv step-limit 'miss nil nil nil)))))))))
+                    (t (mv step-limit 'miss nil ttree nil)))))))))
 
 ; Inside the waterfall, the following clause processor immediately follows
 ; simplify-clause.
@@ -8114,6 +8127,22 @@
                  (extend-car-cdr-sorted-alist
                   key car-val cdr-val (cdr alist))))))
 
+(defun extract-and-classify-lemmas1 (runes ignore-lst forced-runes alist)
+  (cond ((endp runes) alist)
+        (t (extract-and-classify-lemmas1
+            (cdr runes) ignore-lst forced-runes
+            (let ((rune (car runes)))
+              (cond
+               ((member-eq (base-symbol rune) ignore-lst)
+                alist)
+               (t
+                (extend-car-cdr-sorted-alist
+                 (car rune)
+                 (cond ((member-equal rune forced-runes) t)
+                       (t nil))
+                 (base-symbol rune)
+                 alist))))))))
+
 (defun extract-and-classify-lemmas (ttree ignore-lst forced-runes alist)
 
 ; We essentially partition the set of runes tagged as 'lemmas in ttree
@@ -8140,29 +8169,9 @@
 ; The alist is sorted by car.  Each value is itself an alist that is
 ; sorted by cdr.
 
-  (cond ((null ttree) alist)
-        ((symbolp (caar ttree))
-         (cond
-          ((eq (caar ttree) 'lemma)
-           (extract-and-classify-lemmas
-            (cdr ttree) ignore-lst forced-runes
-            (let ((rune (cdar ttree)))
-              (cond
-               ((member-eq (base-symbol rune) ignore-lst)
-                alist)
-               (t
-                (extend-car-cdr-sorted-alist
-                 (car rune)
-                 (cond ((member-equal rune forced-runes) t)
-                       (t nil))
-                 (base-symbol rune)
-                 alist))))))
-          (t (extract-and-classify-lemmas (cdr ttree)
-                                          ignore-lst forced-runes alist))))
-        (t (extract-and-classify-lemmas
-            (cdr ttree) ignore-lst forced-runes
-            (extract-and-classify-lemmas (car ttree)
-                                         ignore-lst forced-runes alist)))))
+  (extract-and-classify-lemmas1
+   (tagged-objects 'lemma ttree)
+   ignore-lst forced-runes alist))
 
 (deflabel Simple
   :doc
@@ -8224,9 +8233,9 @@
 
 (defconst *fake-rune-alist*
 
-; We use this constant for dealing with fake runes in tag trees.  We ignore
+; We use this constant for dealing with fake runes in tag-trees.  We ignore
 ; *fake-rune-for-anonymous-enabled-rule*, because push-lemma is careful not to
-; put it into any tag trees.
+; put it into any tag-trees.
 
   (list (cons (car *fake-rune-for-linear*)
               "linear arithmetic")
@@ -8264,7 +8273,19 @@
             (cdr alist)
             (union-equal (cdr (car alist)) ans)))))
 
+(defun all-runes-in-var-to-runes-alist-lst (lst ans)
+  (cond ((endp lst) ans)
+        (t (all-runes-in-var-to-runes-alist-lst
+            (cdr lst)
+            (all-runes-in-var-to-runes-alist (car lst) ans)))))
+
 (mutual-recursion
+
+(defun all-runes-in-elim-sequence-lst (lst ans)
+  (cond ((endp lst) ans)
+        (t (all-runes-in-elim-sequence-lst
+            (cdr lst)
+            (all-runes-in-elim-sequence (car lst) ans)))))
 
 (defun all-runes-in-elim-sequence (elim-sequence ans)
 
@@ -8281,120 +8302,151 @@
                                  (add-to-set-equal (nth 0 (car elim-sequence))
                                                    ans)))))))
 
+(defun all-runes-in-ttree-fc-derivation-lst (lst ans)
+  (cond ((endp lst) ans)
+        (t (all-runes-in-ttree-fc-derivation-lst
+            (cdr lst)
+            (add-to-set-equal
+             (access fc-derivation (car lst) :rune)
+             (all-runes-in-ttree (access fc-derivation (car lst) :ttree)
+                                 ans))))))
+
+(defun all-runes-in-ttree-find-equational-poly-lst (lst ans)
+  (cond ((endp lst) ans)
+        (t (all-runes-in-ttree-find-equational-poly-lst
+            (cdr lst)
+            (let ((val (car lst))) ; Shape: (poly1 . poly2)
+              (all-runes-in-ttree
+               (access poly (car val) :ttree)
+               (all-runes-in-ttree (access poly (cdr val) :ttree)
+                                   ans)))))))
+
 (defun all-runes-in-ttree (ttree ans)
 
 ; Ttree is any ttree produced by this system.  We sweep it collecting into ans
 ; every rune in it.  
 
   (cond
-   ((null ttree) ans)
-   ((symbolp (caar ttree))
-    (all-runes-in-ttree
-     (cdr ttree)
-     (let ((val (cdar ttree)))
+   ((endp ttree) ans)
+   (t (all-runes-in-ttree
+       (cdr ttree)
+       (let ((tag (caar ttree))
+             (lst (cdar ttree)))
+         (case
+           tag
+           (lemma
+; Shape:  rune
+            (union-equal lst ans))
+           (:by
+; Shape: (lmi-lst thm-cl-set constraint-cl k)
 
-; Val is the value of the tag.  Below we enumerate all possible tags.  For each
-; we document the shape of val and then process it for runes. 
+; As of this writing, there aren't any runes in an lmi list that are being
+; treated as runes.  Imagine proving a lemma that is then supplied in a :use
+; hint.  It shouldn't matter, from the point of view of tracking RUNES, whether
+; that lemma created a rewrite rule that is currently disabled or whether that
+; lemma has :rule-classes nil.
 
-       (case
-        (caar ttree)
-        (lemma                        ;;; Shape:  rune
-         (add-to-set-equal val ans))
-        (:by                          ;;; Shape: (lmi-lst thm-cl-set constraint-cl k)
-         ;;(all-runes-in-lmi-lst (car val) wrld ans)
-
-; As of this writing, there aren't any runes in an lmi list that are
-; being treated as runes.  Imagine proving a lemma that is then
-; supplied in a :use hint.  It shouldn't matter, from the point of
-; view of tracking RUNES, whether that lemma created a rewrite rule that
-; is currently disabled or whether that lemma has :rule-classes nil.
-
-         ans)
-        (:bye                         ;;; Shape: (name . cl), where name is a
-                                      ;;; "new" name, not the name of something
-                                      ;;; used.
-         ans)
-        (:or                          ;;; Shape (parent-cl-id
-                                      ;;;        nil-or-branch-number
-                                      ;;;        ((user-hint1 . hint-settings1)
-                                      ;;;         ...))
-                                      ;;; See comment about the :by case above.
-         ans)
-        (:use                         ;;; Shape: ((lmi-lst (hyp1 ...) cl k) . n)
-         ;;(all-runes-in-lmi-lst (car (car val)) wrld ans)
+            ans)
+           (:bye
+; Shape: (name . cl), where name is a "new" name, not the name of something
+; used.
+            ans)
+           (:or
+; Shape (parent-cl-id nil-or-branch-number ((user-hint1 . hint-settings1) ...))
+; See comment about the :by case above.
+            ans)
+           (:use
+; Shape: ((lmi-lst (hyp1 ...) cl k) . n)
 
 ; See comment for the :by case above.
 
-         ans)
-        (:cases                       ;;; Shape: ((term1 ... termn) . clauses)
-         ans)
-        (preprocess-ttree             ;;; Shape: ttree
-         (all-runes-in-ttree val ans))
-        (assumption                   ;;; Shape: term
-         ans)
-        (pt                           ;;; Shape: parent tree - just numbers
-         ans)
-        (fc-derivation                ;;; Shape: fc-derivation record
-         (add-to-set-equal (access fc-derivation val :rune)
-                           (all-runes-in-ttree (access fc-derivation val :ttree)
-                                               ans)))
-        (find-equational-poly         ;;; Shape: (poly1 . poly2)
-         (all-runes-in-ttree (access poly (car val) :ttree)
-                             (all-runes-in-ttree (access poly (cdr val) :ttree)
-                                                 ans)))
-        (variables                    ;;; Shape: var-lst
-         ans)
-        (elim-sequence                ;;; Shape: ((rune rhs lhs alist 
-                                    ;;;          restricted-vars
-                                    ;;;          var-to-runes-alist
-                                    ;;;          ttree) ...)
-         (all-runes-in-elim-sequence val ans))
-        ((literal                     ;;; Shape: term
-          hyp-phrase                  ;;;        tilde-@ phrase
-          equiv                       ;;;        equiv relation
-          bullet                      ;;;        term
-          target                      ;;;        term
-          cross-fert-flg              ;;;        boolean flg
-          delete-lit-flg              ;;;        boolean flg
-          clause-id                   ;;;        clause-id
-          binding-lst)                ;;;        alist binding vars to terms
-         ans)
-        ((terms                       ;;; Shape: list of terms
-          restricted-vars)            ;;;        list of vars
-         ans)
-        (var-to-runes-alist           ;;; Shape: (...(var . (rune1 ...))...)
-         (all-runes-in-var-to-runes-alist val ans))
-        (ts-ttree                     ;;; Shape: ttree
-         (all-runes-in-ttree val ans))
-        ((irrelevant-lits             ;;; Shape: clause
-          clause)                     ;;;        clause
-         ans)
-        (hidden-clause                ;;; Shape: t
-         ans)
-        (abort-cause                  ;;; Shape: symbol
-         ans)
-        (bddnote                      ;;; Shape: bddnote
+            ans)
+           (:cases
+; Shape: ((term1 ... termn) . clauses)
+            ans)
+           (preprocess-ttree
+; Shape: ttree
+            (all-runes-in-ttree-lst lst ans))
+           (assumption
+; Shape: term
+            ans)
+           (pt
+; Shape: parent tree - just numbers
+            ans)
+           (fc-derivation
+; Shape: fc-derivation record
+            (all-runes-in-ttree-fc-derivation-lst lst ans))
+           (find-equational-poly
+; Shape: (poly1 . poly2)
+            (all-runes-in-ttree-find-equational-poly-lst lst ans))
+           (variables
+; Shape: var-lst
+            ans)
+           (elim-sequence
+; Shape: ((rune rhs lhs alist restricted-vars var-to-runes-alist ttree) ...)
+            (all-runes-in-elim-sequence-lst lst ans))
+           ((literal          ;;; Shape: term
+             hyp-phrase       ;;;        tilde-@ phrase
+             equiv            ;;;        equiv relation
+             bullet           ;;;        term
+             target           ;;;        term
+             cross-fert-flg   ;;;        boolean flg
+             delete-lit-flg   ;;;        boolean flg
+             clause-id        ;;;        clause-id
+             binding-lst      ;;;        alist binding vars to terms
+             terms            ;;;        list of terms
+             restricted-vars) ;;;        list of vars
+            ans)
+           ((rw-cache-nil-tag
+             rw-cache-any-tag)
+; Shape: rw-cache-entry
+            ans)
+           (var-to-runes-alist
+; Shape: (...(var . (rune1 ...))...)
+            (all-runes-in-var-to-runes-alist-lst lst ans))
+           (ts-ttree
+; Shape: ttree
+            (all-runes-in-ttree-lst lst ans))
+           ((irrelevant-lits
+             clause)
+; Shape: clause
+            ans)
+           (hidden-clause
+; Shape: t
+            ans)
+           (abort-cause
+; Shape: symbol
+            ans)
+           (bddnote
+; Shape: bddnote
 
 ; A bddnote has a ttree in it.  However, whenever a bddnote is put into a given
 ; ttree, the ttree from that bddnote is also added to the same given ttree.
 ; So, we don't really think of a bddnote as containing a "ttree" per se, but
 ; rather, a sort of data structure that is isomorphic to a ttree.
 
-         ans)
-        (case-limit                   ;;; Shape: t
-         ans)
-        (sr-limit                     ;;; Shape: t
-         ans)
-        (:clause-processor            ;;; Shape: (clause-processor-hint
-         ans)                         ;;;         . clauses)
-        (otherwise (er hard 'all-runes-in-ttree
-                       "This function must know every possible tag so that it ~
-                        can recover the runes used in a ttree.  The unknown ~
-                        tag ~x0, whose value is ~x1, has just been encountered."
-                       (caar ttree)
-                       (cdar ttree)))))))
-   (t (all-runes-in-ttree (cdr ttree)
-                          (all-runes-in-ttree (car ttree) ans)))))
+            ans)
+           (case-limit
+; Shape: t
+            ans)
+           (sr-limit
+; Shape: t
+            ans)
+           (:clause-processor
+; Shape: (clause-processor-hint . clauses)
+            ans)
+           (otherwise (er hard 'all-runes-in-ttree
+                          "This function must know every possible tag so that ~
+                           it can recover the runes used in a ttree.  The ~
+                           unknown tag ~x0, associated with the list of ~
+                           values ~x1, has just been encountered."
+                          tag
+                          lst))))))))
+
+(defun all-runes-in-ttree-lst (lst ans)
+  (cond ((endp lst) ans)
+        (t (all-runes-in-ttree-lst (cdr lst)
+                                   (all-runes-in-ttree (car lst) ans)))))
 )
 
 (defun rune-< (x y)
@@ -8602,38 +8654,29 @@
                                         acc
                                       (cons (car runes) acc)))))))))
 
-(defun recover-forced-runes (ttree ans)
-
-; Every assumption in ttree has exactly one assumnote.  Let the
-; ":rune" of the assumption be the :rune field of the car of its
-; assumnotes.
-
-; We scan the tag tree ttree for all occurrences of the 'assumption
-; tag and collect into ans the :rune of each assumption, when the
-; :rune is a rune.  We ignore the symbolp :runes because we will be
-; searching the resulting list for genuine runes and thus need not
-; clutter it with symbols.  
-
+(defun recover-forced-runes1 (recs ans)
   (cond
-   ((null ttree) ans)
-   ((symbolp (caar ttree))
-    (cond
-     ((and (eq (caar ttree) 'assumption)
-           (not (symbolp
-                 (access assumnote
-                         (car (access assumption (cdar ttree) :assumnotes))
-                         :rune))))
-      (recover-forced-runes
-       (cdr ttree)
-       (add-to-set-equal
-        (access assumnote
-                (car (access assumption (cdar ttree) :assumnotes))
-                :rune)
-        ans)))
-     (t (recover-forced-runes (cdr ttree) ans))))
-   (t (recover-forced-runes
-       (car ttree)
-       (recover-forced-runes (cdr ttree) ans)))))
+   ((endp recs) ans)
+   (t (recover-forced-runes1
+       (cdr recs)
+       (let ((rune (access assumnote
+                           (car (access assumption (car recs) :assumnotes))
+                           :rune)))
+         (cond ((not (symbolp rune))
+                (add-to-set-equal rune ans))
+               (t ans)))))))
+
+(defun recover-forced-runes (ttree)
+
+; Every assumption in ttree has exactly one assumnote.  Let the ":rune" of the
+; assumption be the :rune field of the car of its assumnotes.
+
+; We scan the tag-tree ttree for all occurrences of the 'assumption tag and
+; collect into ans the :rune of each assumption, when the :rune is a rune.  We
+; ignore the symbolp :runes because we will be searching the resulting list for
+; genuine runes and thus need not clutter it with symbols.
+
+  (recover-forced-runes1 (tagged-objects 'assumption ttree) nil))
 
 (defun tilde-*-raw-simp-phrase (ttree punct phrase)
 
@@ -8641,7 +8684,7 @@
 ; state global 'raw-proof-format.  We supply the concluding punctuation msg,
 ; punct.
 
-  (let ((forced-runes (recover-forced-runes ttree nil)))
+  (let ((forced-runes (recover-forced-runes ttree)))
     (let ((runes (all-runes-in-ttree ttree nil)))
       (mv-let (message-lst char-alist)
               (tilde-*-raw-simp-phrase1
@@ -8682,7 +8725,7 @@
 ; output is the result of this function, then essentially nothing was
 ; done (i.e., "trivial observations" would be printed).
 
-  (let ((forced-runes (recover-forced-runes ttree nil)))
+  (let ((forced-runes (recover-forced-runes ttree)))
     (mv-let (message-lst char-alist)
             (tilde-*-simp-phrase1
              (extract-and-classify-lemmas ttree nil forced-runes nil)
@@ -8837,7 +8880,7 @@
 
   (cond ((null x) "")
         (t (msg " with BDDs (~x0 nodes)"
-                (access bddnote (cdr x) :mx-id)))))
+                (access bddnote x :mx-id)))))
 
 ; Clause-ids are typed as strings by the user when he wants to
 ; identify a clause to which some hint settings are attached.  We now
@@ -9145,7 +9188,7 @@
             conjectures including ~@3 itself!  Therefore, we ignore this ~
             specious simp~-li~-fi~-ca~-tion.  See :DOC ~
             specious-simplification.~@c~|"
-           (list (cons #\0 (if (tagged-object 'assumption ttree) 1 0))
+           (list (cons #\0 (if (tagged-objectsp 'assumption ttree) 1 0))
                  (cons #\1 (if raw-proof-format
                                (tilde-*-raw-simp-phrase ttree #\, "")
                              (tilde-*-simp-phrase ttree)))
@@ -9154,8 +9197,8 @@
                  (cons #\b (tilde-@-bddnote-phrase
                             (tagged-object 'bddnote ttree)))
                  (cons #\c (tilde-@-case-split-limitations-phrase
-                            (tagged-object 'sr-limit ttree)
-                            (tagged-object 'case-limit ttree)
+                            (tagged-objects 'sr-limit ttree)
+                            (tagged-objects 'case-limit ttree)
                             "  ")))
            (proofs-co state)
            state
@@ -9165,13 +9208,13 @@
        (raw-proof-format
         (fms "But ~#0~[~/forced ~]simplification~@b reduces this to T, using ~
               ~*1~|"
-             (list (cons #\0 (if (tagged-object 'assumption ttree) 1 0))
+             (list (cons #\0 (if (tagged-objectsp 'assumption ttree) 1 0))
                    (cons #\1 (tilde-*-raw-simp-phrase
                               ttree
                               #\.
                               (tilde-@-case-split-limitations-phrase
-                               (tagged-object 'sr-limit ttree)
-                               (tagged-object 'case-limit ttree)
+                               (tagged-objects 'sr-limit ttree)
+                               (tagged-objects 'case-limit ttree)
                                "")))
                    (cons #\b (tilde-@-bddnote-phrase
                               (tagged-object 'bddnote ttree))))
@@ -9181,41 +9224,41 @@
        (t
         (fms "But ~#0~[~/forced ~]simplification~@b reduces this to T, using ~
               ~*1.~@c~|"
-             (list (cons #\0 (if (tagged-object 'assumption ttree) 1 0))
+             (list (cons #\0 (if (tagged-objectsp 'assumption ttree) 1 0))
                    (cons #\1 (tilde-*-simp-phrase ttree))
                    (cons #\b (tilde-@-bddnote-phrase
                               (tagged-object 'bddnote ttree)))
                    (cons #\c (tilde-@-case-split-limitations-phrase
-                              (tagged-object 'sr-limit ttree)
-                              (tagged-object 'case-limit ttree)
+                              (tagged-objects 'sr-limit ttree)
+                              (tagged-objects 'case-limit ttree)
                               "  ")))
              (proofs-co state)
              state
              (term-evisc-tuple nil state)))))
      (t
-      (let ((hyp-phrase-pair (tagged-object 'hyp-phrase ttree)))
-        (cond (hyp-phrase-pair
+      (let ((hyp-phrase (tagged-object 'hyp-phrase ttree)))
+        (cond (hyp-phrase
                (fms "We remove HIDE from ~@0, which was used heuristically to ~
                      transform ~@1 by substituting into the rest of that ~
                      goal.  This produces~|"
-                    (list (cons #\0 (cdr hyp-phrase-pair))
+                    (list (cons #\0 hyp-phrase)
                           (cons #\1 (tilde-@-clause-id-phrase
-                                     (cdr (tagged-object 'clause-id ttree)))))
+                                     (tagged-object 'clause-id ttree))))
                     (proofs-co state)
                     state
                     (term-evisc-tuple nil state)))
               (raw-proof-format
                (fms "This ~#0~[~/forcibly ~]simplifies~@b, using ~*1~
                      to~#2~[~/ the following ~n3 conjectures.~@c~]~|"
-                    (list (cons #\0 (if (tagged-object 'assumption ttree) 1 0))
+                    (list (cons #\0 (if (tagged-objectsp 'assumption ttree) 1 0))
                           (cons #\1 (tilde-*-raw-simp-phrase ttree #\, ""))
                           (cons #\2 clauses)
                           (cons #\3 (length clauses))
                           (cons #\b (tilde-@-bddnote-phrase
                                      (tagged-object 'bddnote ttree)))
                           (cons #\c (tilde-@-case-split-limitations-phrase
-                                     (tagged-object 'sr-limit ttree)
-                                     (tagged-object 'case-limit ttree)
+                                     (tagged-objectsp 'sr-limit ttree)
+                                     (tagged-objectsp 'case-limit ttree)
                                      "  ")))
                     (proofs-co state)
                     state
@@ -9223,15 +9266,15 @@
               (t
                (fms "This ~#0~[~/forcibly ~]simplifies~@b, using ~*1, ~
                      to~#2~[~/ the following ~n3 conjectures.~@c~]~|"
-                    (list (cons #\0 (if (tagged-object 'assumption ttree) 1 0))
+                    (list (cons #\0 (if (tagged-objectsp 'assumption ttree) 1 0))
                           (cons #\1 (tilde-*-simp-phrase ttree))
                           (cons #\2 clauses)
                           (cons #\3 (length clauses))
                           (cons #\b (tilde-@-bddnote-phrase
                                      (tagged-object 'bddnote ttree)))
                           (cons #\c (tilde-@-case-split-limitations-phrase
-                                     (tagged-object 'sr-limit ttree)
-                                     (tagged-object 'case-limit ttree)
+                                     (tagged-objectsp 'sr-limit ttree)
+                                     (tagged-objectsp 'case-limit ttree)
                                      "  ")))
                     (proofs-co state)
                     state

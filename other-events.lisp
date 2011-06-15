@@ -1419,6 +1419,19 @@
                     (embedded-event-lst nil)
                     (cltl-command nil)
                     (top-level-cltl-command-stack nil)
+                    (hons-enabled
+
+; Why are we comfortable making hons-enabled a world global?  Note that even if
+; if hons-enabled were a state global, the world would be sensitive to whether
+; or not we are in the hons version: for example, we get different evaluation
+; results for the following.
+
+;   (getprop 'memoize-table 'table-guard *t* 'current-acl2-world (w state))
+
+; By making hons-enabled a world global, we can access its value without state
+; in history query functions such as :pe.
+
+                     #+hons t #-hons nil)
                     (include-book-alist nil)
                     (include-book-alist-all nil)
                     (include-book-path nil)
@@ -4229,6 +4242,7 @@
      logic program
      add-default-hints!
      remove-default-hints!
+     set-rw-cache-state!
      set-override-hints-macro
      set-match-free-default
      set-enforce-redundancy
@@ -4332,7 +4346,7 @@
     whose expansion is an embedded event (~pl[make-event]);
 
     ~c[x] is of the form ~c[(]~ilc[WITH-OUTPUT]~c[ ... x1)],
-    ~c[(]~ilc[WITH-PROVER-STEP-LIMIT]~c[ ... x1)], or
+    ~c[(]~ilc[WITH-PROVER-STEP-LIMIT]~c[ ... x1 ...)], or
     ~c[(]~ilc[WITH-PROVER-TIME-LIMIT]~c[ ... x1)], where ~c[x1] is an embedded
     event form;
 
@@ -4813,7 +4827,8 @@
 ; The macro being called will check the details of the form structure.
 
            (er-let* ((new-form (chk-embedded-event-form
-                                (car (last form)) orig-form wrld ctx state
+                                (car (last form))
+                                orig-form wrld ctx state
                                 names portcullisp in-local-flg
                                 in-encapsulatep make-event-chk)))
                     (value (and new-form
@@ -14422,10 +14437,10 @@
                            ((equal flg "NIL")
                             (value nil))
                            (t (er soft ctx
-                                  "Illegal value, ~x0, for environment variable ~
-                               ACL2_COMPILE_FLG.  The legal values are (after ~
-                               converting to uppercase) ~x1, ~x2. and ~
-                               (synonymous with ~x1) :ALL."
+                                  "Illegal value, ~x0, for environment ~
+                                   variable ACL2_COMPILE_FLG.  The legal ~
+                                   values are (after converting to uppercase) ~
+                                   ~x1, ~x2. and (synonymous with ~x1) :ALL."
                                   flg
                                   t
                                   nil
@@ -14793,13 +14808,14 @@
 ; above, which calls read-object, which calls chk-bad-lisp-object.
 
                                           (er soft ctx
-                                              "The file ~x0 is not a legal list ~
-                                           of embedded event forms because it ~
-                                           contains an object, ~x1, that ~
-                                           check sum was unable to handle.  ~
-                                           This may be an implementation ~
-                                           error; feel free to contact the ~
-                                           ACL2 implementors."
+                                              "The file ~x0 is not a legal ~
+                                               list of embedded event forms ~
+                                               because it contains an object, ~
+                                               ~x1, that check sum was unable ~
+                                               to handle.  This may be an ~
+                                               implementation error; feel ~
+                                               free to contact the ACL2 ~
+                                               implementors."
                                               full-book-name
                                               chk-sum))
                                          (t
@@ -14908,7 +14924,8 @@
   (certify-book \"my-arith\" 0 t :ttags :all)
                                        ; ... allowing all trust tags (ttags)
   (certify-book \"my-arith\" t)        ; ... from world of old certificate
-  (certify-book \"my-arith\" :acl2x t) ; ... writing or reading a .acl2x file~/
+  (certify-book \"my-arith\" 0 nil :acl2x t)
+                                       ; ... writing or reading a .acl2x file~/
 
   General Form:
   (certify-book book-name
@@ -15957,7 +15974,9 @@
   attempt.
 
   By default, the ACL2 executable used is the file ~c[saved_acl2] in the ACL2
-  sources directory.  But you can specify another instead:
+  sources directory.  But you can specify another instead; indeed, you must do
+  so if you are using an experimental extension (~pl[real],
+  ~pl[hons-and-memoization], and ~pl[parallelism]):
   ~bv[]
   make regression ACL2=<your_favorite_acl2_executable>
   ~ev[]
@@ -15971,6 +15990,15 @@
   ~c[Makefile].  For example:
   ~bv[]
   make -j 8 regression ACL2_BOOK_DIRS='symbolic paco'
+  ~ev[]
+  By default, your acl2-customization file (~pl[acl2-customization]) is ignored
+  by all such flavors of ``~c[make regression]''.  However, you can specify the
+  use of an acl2-customization file by setting the value of environment
+  variable ~c[ACL2_CUSTOMIZATION] to the empty string, indicating a default
+  such file, or to the desired absolute pathname.  For example:
+  ~bv[]
+  make regression ACL2_CUSTOMIZATION=''
+  make regression ACL2_CUSTOMIZATION='~~/acl2-customization.lisp'
   ~ev[]
 
   We now discuss how to create suitable makefiles in individual directories
@@ -17997,11 +18025,10 @@
                       (true-listp (caddr type))
                       (equal (length (caddr type)) 1)))
             (er soft ctx
-                "When a field descriptor specifies an ARRAY :type, ~
-                 the type must be of the form (ARRAY etype (n)).  ~
-                 Note that we only support single-dimensional arrays. ~
-                  The purported ARRAY :type ~x0 for the ~x1 field of ~
-                 ~x2 is not of this form."
+                "When a field descriptor specifies an ARRAY :type, the type ~
+                 must be of the form (ARRAY etype (n)).  Note that we only ~
+                 support single-dimensional arrays.  The purported ARRAY ~
+                 :type ~x0 for the ~x1 field of ~x2 is not of this form."
                 type field name))
           (t (let* ((etype (cadr type))
                     (etype-term (translate-declaration-to-guard
@@ -21823,8 +21850,16 @@
                                      (cadr notinline-tail))))
                  #-hons (eq (cadr notinline-tail) :fncall))
                 #+hons
-                (t t)
-                #-hons
+                (memo-entry
+
+; Memoization installs its own symbol-function for fn, so we do not want to
+; insert the body of fn into the traced definition; instead, we want to call
+; the traced version of fn to call the "old" (memoized) fn.  Note that we
+; always remove any trace when memoizing or unmemoizing, so we don't have the
+; symmetric problem of figuring out how to make a memoized function call a
+; traced function.
+
+                 t)
                 ((or (not def) ; then no choice in the matter!
                      predefined
                      (member-eq fn (f-get-global 'program-fns-with-raw-code
@@ -21832,7 +21867,6 @@
                      (member-eq fn (f-get-global 'logic-fns-with-raw-code
                                                  *the-live-state*)))
                  t)
-                #-hons
                 (t nil)))
          (gcond (and cond-tail (acl2-gentemp "COND")))
          (garglist (acl2-gentemp "ARGLIST"))
@@ -22485,10 +22519,9 @@
   Otherwise tracing proceeds as follows.  First the ~c[:entry] form is
   evaluated, and the result is printed.  Then the call of ~c[fn] is evaluated.
   Finally the ~c[:exit] term is evaluated and the result is printed.  As
-  indicated above, the default for the ~c[:entry] term if omitted (or
-  explicitly the term ~c[nil]) is ~c[(cons TRACED-FN ARGLIST)], and the default
-  for the ~c[:exit] term if omitted or explicitly the term ~c[nil] is
-  ~c[(cons TRACED-FN VALUES)].
+  indicated above, the default for the ~c[:entry] term if omitted or explicitly
+  ~c[nil] is ~c[(cons TRACED-FN ARGLIST)], and the default for the ~c[:exit]
+  term if omitted or explicitly ~c[nil] is ~c[(cons TRACED-FN VALUES)].
 
   Note that if the function has a formal named ~c[ARGLIST], then ~c[ARGLIST]
   will nevertheless refer to the entire list of formals, not the single formal
@@ -22497,9 +22530,9 @@
 
   As mentioned above, for each of ~c[:entry] and ~c[:exit], a value of ~c[nil]
   specifies the default behavior.  If you really want a value of ~c[nil], use a
-  non-~c[nil] form that evaluates to ~c[nil], for example ~c[(car nil)].
-  However, for ~c[:cond] a value of ~c[nil] means what it says: do not evaluate
-  the ~c[:entry] or ~c[:exit] forms.
+  non-~c[nil] form that evaluates to ~c[nil], for example ~c[(car nil)] or
+  ~c['nil].  However, for ~c[:cond] a value of ~c[nil] means what it says: do
+  not evaluate the ~c[:entry] or ~c[:exit] forms.
 
   Finally we discuss the case that the ~c[:entry] or ~c[:exit] term is of the
   form ~c[(:fmt u)].  In these cases, the term ~c[u] is evaluated as described
@@ -23166,6 +23199,12 @@
          (throw-raw-ev-fncall-trace-form
           `(throw-raw-ev-fncall
             :def
+
+; Parallelism wart: If we do not implement the better mechanism for throwing
+; and catching tags (as specified in the definition of
+; *thrown-with-raw-ev-fncall-count*), we should modify this definition of
+; throw-raw-ev-fncall to also set the variable *thrown-with-raw-ev-fncall*.
+
             (throw-raw-ev-fncall (val) (throw 'raw-ev-fncall val))
             :multiplicity
             1
@@ -23928,7 +23967,7 @@
                              state ens ttree)
 
 ; Returns unrelieved hyps (with the appropriate substitution applied), an
-; extended substitution, and a new tag tree.  Note: the substitution really has
+; extended substitution, and a new tag-tree.  Note: the substitution really has
 ; been applied already to the returned hyps, even though we also return the
 ; extended substitution.
 
@@ -24130,7 +24169,7 @@
 (defun hyps-type-alist (assumptions ens wrld state)
 
 ; Note that the force-flg arg to type-alist-clause is nil here, so we shouldn't
-; wind up with any assumptions in the returned tag tree. Also note that we
+; wind up with any assumptions in the returned tag-tree. Also note that we
 ; return (mv contradictionp type-alist fc-pair-lst), where actually fc-pair-lst
 ; is a ttree if contradictionp holds; normally we ignore fc-pair-lst otherwise.
 
@@ -24378,41 +24417,48 @@
 ; of :dir) with absolute directory pathnames.  The macro add-include-book-dir
 ; provides a way to extend that field.  Up through ACL2 Version_3.6.1, when
 ; add-include-book-dir was executed in raw Lisp it would be ignored, because it
-; macroexpanded to a table event.  This could be a problem if we then were to
-; execute include-book with a :dir argument that might have been expected to be
-; installed with that ignored add-include-book-dir command.
+; macroexpanded to a table event.  But consider a file loaded in raw Lisp, say
+; when we are in raw-mode and are executing an include-book command with a :dir
+; argument.  If that :dir value were defined by an add-include-book-dir event
+; also evaluated in raw Lisp, and hence ignored, then that :dir value would not
+; really be defined after all and the include-book would fail.
 
 ; The above problem with raw-mode could be explained away by saying that
-; raw-mode is a hack, and you get what you get.  But as we anticipate support
-; for early loading of compiled files, we anticipate routine evaluation of
-; add-include-book-dir and include-book in raw Lisp.
+; raw-mode is a hack, and you get what you get.  But Version_4.0 introduced the
+; loading of compiled files before corresponding event processing, which causes
+; routine evaluation of add-include-book-dir and include-book in raw Lisp.
 
 ; Therefore we maintain for raw Lisp a variant of the acl2-default-table's
-; include-book-dir-alist, namely state global 'raw-include-book-dir-alist.
-; This variable is initially :ignore, meaning that we are to use the
+; include-book-dir-alist, namely state global 'raw-include-book-dir-alist.  The
+; value of this variable is initially :ignore, meaning that we are to use the
 ; acl2-default-table's include-book-dir-alist.  But when the value is not
 ; :ignore, then it is an alist that is used as the include-book-dir-alist.  We
-; maintain the invariant that :ignore is the value except when in raw-mode or
-; during evaluation of include-book-fn.  When its value is not :ignore, then
-; execution of add-include-book-dir will extend this variable instead of the
-; acl2-defaults-table.  And whenever we execute include-book in raw Lisp, we
-; use this value instead of the one in the acl2-defaults-table, by binding it
-; to nil upon entry.  Thus, any add-include-book-dir will be local to the book,
-; which respects the semantics of include-book.  We bind it to nil because that
-; is also how include-book works: the acl2-defaults-table initially has an
-; empty :include-book-dir-alist field (see process-embedded-events).
+; guarantee that every embedded event form that defines handling of :dir values
+; for include-book does so in a manner that works when loading compiled files,
+; and we weakly extend this guarantee to raw-mode as well (weakly, since we
+; cannot perfectly control raw-mode but anyhow, a trust tag is necessary to
+; enter raw-mode so our guarantee need not be ironclad).  The above :ignore
+; value must then be set to a legitimate include-book-alist when inside
+; include-book or (generally) raw-mode, and should remain :ignore when not in
+; those contexts.  When the value is not :ignore, then execution of
+; add-include-book-dir will extend the value of 'raw-include-book-dir-alist
+; instead of modifying the acl2-defaults-table.  And whenever we execute
+; include-book in raw Lisp, we use this value instead of the one in the
+; acl2-defaults-table, by binding it to nil upon entry.  Thus, any
+; add-include-book-dir will be local to the book, which respects the semantics
+; of include-book.  We bind it to nil because that is also how include-book
+; works: the acl2-defaults-table initially has an empty :include-book-dir-alist
+; field (see process-embedded-events).
 
 ; In order to be able to rely on the above scheme, we disallow any direct table
 ; update of the :include-book-dir-alist field of the acl2-defaults-table.  We
 ; use the state global 'modifying-include-book-dir-alist for this purpose,
 ; which is globally nil but is bound to t by add-include-book-dir and
-; delete-include-book-dir.  We insist that it be non-nil at any table update of
-; the :include-book-dir-alist field.  For convenience we do this check in
-; chk-table-guard.  We considered doing it in chk-embedded-event-form, but that
-; would have been more awkward, and more importantly, it would have allowed
-; such direct updates when developing a book interactively but not when
-; certifying the book, which could provide a rude surprise to the user at
-; certification time.
+; delete-include-book-dir.  We insist that it be non-nil in chk-table-guard.
+; We considered doing it in chk-embedded-event-form, but that would have been
+; more awkward, and more importantly, it would have allowed such direct updates
+; when developing a book interactively but not when certifying the book, which
+; could provide a rude surprise to the user at certification time.
 
 ; End of Essay on Include-book-dir-alist
 
@@ -24445,7 +24491,8 @@
            (state-global-let*
             ((inhibit-output-lst (cons 'summary (@ inhibit-output-lst)))
              (modifying-include-book-dir-alist t))
-            (let* ((dir (extend-pathname (cbd) dir state))
+            (let* ((dir (maybe-add-separator
+                         (extend-pathname (cbd) dir state)))
                    (raw-p (not (eq (f-get-global 'raw-include-book-dir-alist
                                                  state)
                                    :ignore)))
@@ -24460,6 +24507,10 @@
                    (new (acons keyword dir old)))
               (cond
                ((not (absolute-pathname-string-p dir t (os (w state))))
+
+; The call above of maybe-add-separator should make this branch dead code, but
+; we leave it here for robustness, e.g., in case we change that call.
+
                 (er soft ctx
                     "The second argument of add-include-book-dir must ~
                      represent a directory, in particular ending with ~
@@ -24565,7 +24616,7 @@
                                    (list 'quote new)))
                    (value new))))))))))
 
-(defun add-custom-keyword-hint-fn (key uterm1 uterm2 state)
+(defun@par add-custom-keyword-hint-fn (key uterm1 uterm2 state)
 
 ; We translate uterm1 and uterm2 to check the syntactic requirements and we
 ; cause errors if we don't like what we see.  BUT we store the untranslated
@@ -24593,7 +24644,9 @@
     (er-let*
       ((term1 (translate-simple-or-error-triple uterm1 ctx world state))
        (term2 (translate uterm2
-                         *error-triple-sig*
+                         (serial-first-form-parallel-second-form@par
+                          *error-triple-sig*
+                          *cmp-sig*)
                          nil
                          '(state)
                          ctx world state)))
@@ -26797,15 +26850,22 @@
                                  'defchoose
                                'defun)
                              see-doc))
-                        ((not (and (symbolp g)
-                                   (function-symbolp g wrld)))
+                        ((not (symbolp g))
+                         (er soft ctx
+                             "Only a function symbol may be attached to a ~
+                              function symbol.  The proposed attachment of ~
+                              ~x0 to ~x1 is thus illegal, since ~x0 is not a ~
+                              symbol.~@2"
+                             g f see-doc))
+                        ((not (function-symbolp g wrld))
                          (er soft ctx
                              "Only a function symbol may be attached to a ~
                               function symbol.  The proposed attachment of ~
                               ~x0 to ~x1 is thus illegal, since ~x0 is not a ~
                               known function symbol.~@2~@3"
                              g f see-doc
-                             (let ((g1 (deref-macro-name g (macro-aliases wrld))))
+                             (let ((g1 (deref-macro-name g (macro-aliases
+                                                            wrld))))
 
 ; See the comment above explaining why we cannot soundly allow attachment to
 ; macro-aliases.
@@ -26834,8 +26894,9 @@
                          (er soft ctx
                              "Attachments must be guard-verified function ~
                               symbols~@0, but ~x1 has not had its guard ~
-                              verified.~@2"
-                             unless-ttag g see-doc))
+                              verified.  You may wish to use the macro ~x2 in ~
+                              distributed book books/misc/defattach-bang.~@3"
+                             unless-ttag g 'defattach! see-doc))
                         ((not (and (equal (stobjs-in f wrld)
                                           (stobjs-in g wrld))
                                    (equal (stobjs-out f wrld)
@@ -28119,7 +28180,7 @@
 ;   attachment pairs that are to be installed for execution;
 ; - new-entries is a list to be used for extending (global-val
 ;   'proved-functional-instances-alist wrld);
-; - ttree is a tag tree obtained from the proofs done on behalf of the
+; - ttree is a tag-tree obtained from the proofs done on behalf of the
 ;   defattach event; and
 ; - records is the new list of attachment records to install in the world.
 
@@ -28442,12 +28503,13 @@
 ; This constant should set up a state-global-let* binding for every state
 ; global variable that can have an effect on evaluation of a call of fms, fmt,
 ; or fmt1 (or their "!" versions), which are the functions on which we apply
-; the macro channel-to-string.
+; the macro channel-to-string.  The values for the margins are simply
+; convenient large values.
 
   (append *print-control-defaults*
           `((write-for-read t)
-            (fmt-hard-right-margin 10000) ; arbitrary but large
-            (fmt-soft-right-margin 10000) ; arbitrary but large
+            (fmt-hard-right-margin 10000 set-fmt-hard-right-margin)
+            (fmt-soft-right-margin 10000 set-fmt-soft-right-margin)
             (iprint-soft-bound ,*iprint-soft-bound-default*)
             (iprint-hard-bound ,*iprint-hard-bound-default*)
             (ppr-flat-right-margin

@@ -1014,7 +1014,8 @@
                                        measure-alist wrld))
                             (cons #\3 (if (nth 4 simp-phrase) 1 0))
                             (cons #\4 simp-phrase)
-                            (cons #\5 (if (tagged-object 'sr-limit cl-set-ttree)
+                            (cons #\5 (if (tagged-objectsp 'sr-limit
+                                                           cl-set-ttree)
                                           " as follows (where the ~
                                            subsumption/replacement limit ~
                                            affected this analysis; see :DOC ~
@@ -2330,7 +2331,7 @@
 ; induction-machine and its quick-block-info, otherwise we do not.
 
 ; If no error occurs, we return a triple consisting of the column the printer
-; is in, the final value of wrld and a tag tree documenting the proofs we did.
+; is in, the final value of wrld and a tag-tree documenting the proofs we did.
 
 ; Note: The function could be declared to return 5 values, but we would rather
 ; use the standard state and error primitives and so it returns 3 and lists
@@ -4652,7 +4653,7 @@
 ; X is either a list of names corresponding to a defun, mutual-recursion nest,
 ; or defthm, or else of the form (:term . y) where y is a translated term.
 ; Returns a set of clauses justifying the guards for y in the latter case, else
-; x, together with an assumption-free tag tree justifying that set of clauses
+; x, together with an assumption-free tag-tree justifying that set of clauses
 ; and the new state.  (Do not view this as an error triple!)
 
   (mv-let (cl-set cl-set-ttree state)
@@ -4772,8 +4773,8 @@
   ~c[mutual-recursion], any other functions defined in the same
   ~ilc[mutual-recursion] nest; ~c[cl-set] is a list of lists of terms, viewed
   as a conjunction of clauses (each viewed (as a disjunction); and ~c[ttree] is
-  an assumption-free tag tree that justifies cl-set.  (The notion of ``tag
-  tree'' may probably be ignored except for system developers.)
+  an assumption-free tag-tree that justifies cl-set.  (The notion of
+  ``tag-tree'' may probably be ignored except for system developers.)
 
   ~c[Guard-obligation] is typically used for function names or non-variable
   terms, but as for ~ilc[verify-guards], it may also be applied to theorem
@@ -4886,7 +4887,7 @@
 ; function that returns a pair of the form (col . ttree) when non-erroneous.
 ; Col is the column in which the printer is left.  We always output something
 ; and we always leave the printer ready to start a new sentence.  Ttree is a
-; tag tree describing the proof.
+; tag-tree describing the proof.
 
 ; This function increments timers.  Upon entry, any accumulated time
 ; is charged to 'other-time.  The printing done herein is charged
@@ -5400,7 +5401,7 @@
 ; We do take care of the documentation data base.
 
 ; Like defuns-fn0, this function returns a pair consisting of the new world and
-; a tag tree recording the proofs that were done.
+; a tag-tree recording the proofs that were done.
 
   (let* ((boot-strap-flg (global-val 'boot-strap-flg wrld))
          (wrld0 (cond (non-executablep (putprop-x-lst1 names 'non-executablep
@@ -6836,7 +6837,7 @@
 ; occurs in the body of fn (which has the given formals).  Called-fn-posns is
 ; the set of posns for called-fn that are known to be relevant, except for the
 ; case that called-fn is fn, in which case called-fn-posns is :same.  The
-; formal i, which is is initially 0, is the position in called-fn's argument
+; formal i, which is initially 0, is the position in called-fn's argument
 ; list of the first element of actuals.  We extend posns, the posns of fn known
 ; to be relevant, by seeing which posns are used in the actuals in the relevant
 ; posns of called-fn (i.e., called-fn-posns).
@@ -8771,7 +8772,7 @@
                  (t formals)))))
     (if maybe-attach
         (list 'throw-or-attach fn formals alt-formals)
-      (list 'throw-without-attach fn alt-formals))))
+      (list 'throw-without-attach nil fn alt-formals))))
 
 (defun intro-udf-lst2 (insigs kwd-alist-lst wrld)
 

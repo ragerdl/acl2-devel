@@ -58,9 +58,19 @@
   experimental extension for evaluating forms in parallel~/
 
   This documentation topic relates to an experimental extension of ACL2,
-  created initially by David L. Rager.  ~l[parallelism-build] for how to build
-  an executable image that supports parallel evaluation.  Also see
+  ACL2(p), created initially by David L. Rager.  ~l[parallelism-build] for how
+  to build an executable image that supports parallel evaluation.  Also see
   ~c[books/parallel] for examples.
+
+  IMPORTANT NOTE.  We hope and expect that every evaluation result is correctly
+  computed by ACL2(p), and that every formula proved using ACL2(p) is a theorem
+  of the ACL2 logic (and in fact is provable using ACL2).  However, we do not
+  guarantee these properties.  Since ACL2(p) is intended to be an aid in
+  efficient evaluation and proof development, we focus less on ironclad
+  soundness and more on providing an efficient and working implementation.
+  Nevertheless, if you encounter a case where ACL2(p) computes an incorrect
+  result, or produces a proof where ACL2 fails to do so, please tell the
+  implementors.
 
   One of ACL2's strengths lies in its ability to execute industrial models
   efficiently.  The ACL2 source code provides an experimental parallel
@@ -73,7 +83,7 @@
   found to evaluate to ~c[nil] or non-~c[nil], respectively, thus potentially
   improving on the efficiency of lazy evaluation.~/
 
-  The parallelism primitives allow for limiting parallel evaluation
+  The above four parallelism primitives allow for limiting parallel evaluation
   (spawning of so-called ``threads'') depending on resource availability.
   Specifically, the primitives allow specification of a size condition to
   control the granularity under which threads are allowed to spawn.  You can
@@ -82,7 +92,33 @@
 
   We recommend that in order to learn to use the parallelism primitives, you
   begin by reading examples: ~pl[parallelism-tutorial].  That section will
-  direct you to further documentation topics.")
+  direct you to further documentation topics.
+
+  While we aim to support Clozure Common Lisp (CCL), Steel Bank Common
+  Lisp (SBCL), and Lispworks, SBCL and Lispworks both currently sometimes
+  experience problems when evaluating the ACL2 proof process (the
+  ``waterfall'') in parallel.  Therefore, CCL is the recommend Lisp for anyone
+  that wants to use parallelism and isn't working on fixing those problems.")
+
+; Parallelism wart: complete the following documentation topic for compiling
+; with #+acl2-par.  Link to it from :doc parallelism (and maybe elsewhere).
+
+(defdoc compiling-acl2p
+
+  ":Doc-Section ACL2::Parallelism
+
+  compiling ACL2(p)~/
+
+  The command below will compile ACL2 to support parallel execution, including
+  parallel execution during proofs.  Any non-empty string may be used in place
+  of ~c[t], and the value of ~c[LISP] (shown here as ~c[ccl]) is any Lisp
+  executable on which one can build ACL2(p) (~pl[parallelism]).
+  ~bv[]
+  make ACL2_PAR=t LISP=ccl
+  ~ev[]~/~/")
+
+; Parallelism wart: need to add a doc topic on what's not currently supported
+; inside the parallelized waterfall.
 
 (defdoc parallel
 
@@ -102,9 +138,11 @@
 
   building an ACL2 executable with parallel evaluation enabled~/
 
-  ~l[parallel] and ~pl[parallelism-tutorial] for an introduction to parallel
-  evaluation in ACL2 using parallelism primitives ~ilc[pand], ~ilc[por],
-  ~ilc[plet], and ~ilc[pargs].
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].  ~l[parallel] and
+  ~pl[parallelism-tutorial] for an introduction to parallel evaluation in ACL2
+  using parallelism primitives ~ilc[pand], ~ilc[por], ~ilc[plet], and
+  ~ilc[pargs].
 
   You can build an experimental version of ACL2 that supports parallel
   evaluation in the following host Common Lisp implementations:
@@ -124,51 +162,60 @@
   make large DOC ACL2_PAR=p
   ~ev[]~/~/")
 
-(defun set-parallel-evaluation-fn (value ctx state)
-  (declare (xargs :guard (member-eq value '(t nil :bogus-parallelism-ok))))
+(defun set-parallel-evaluation-fn (val ctx state)
+  (declare (xargs :guard (member-eq val '(t nil :bogus-parallelism-ok))))
   (cond
    ((eq (f-get-global 'parallel-evaluation-enabled state)
-        value)
+        val)
     (pprogn (observation ctx
                          "No change in enabling of parallel evaluation.")
             (value nil)))
    (t
-    (case value
-      ((nil)
-       (pprogn (f-put-global 'parallel-evaluation-enabled value state)
-               (observation ctx
-                            "Disabling parallel evaluation.  Parallelism ~
-                             primitives may still be used, but during ~
-                             evaluation they will degrade to their serial ~
-                             equivalents.")
-               (value nil)))
-      ((t)
-       (pprogn (f-put-global 'parallel-evaluation-enabled value state)
-               (observation ctx
-                            "Parallel evaluation is enabled, but parallelism ~
-                             primitives may only be called within function ~
-                             definitions or macro top-level, not at the top ~
-                             level of the ACL2 read-eval-print loop. ~
-                             See :DOC parallelism-at-the-top-level.")
-               (value t)))
-      (otherwise ; :bogus-parallelism-ok
-       (pprogn (f-put-global 'parallel-evaluation-enabled value state)
-               (observation ctx
-                            "Parallel evaluation is enabled.  Parallelism ~
-                             primitives may be called directly in the ~
-                             top-level loop, but without use of the macro ~
-                             top-level, they will execute serially.  See :DOC ~
-                             parallelism-at-the-top-level.")
-               (value :bogus-parallelism-ok)))))))
+    #-acl2-par
+    (er soft ctx
+        "Parallelism can only be enabled in CCL, threaded SBCL, or Lispworks. ~
+         ~ Additionally, the feature :ACL2-PAR must be set when compiling ~
+         ACL2 (for example, by using `make' with argument `ACL2_PAR=t').  ~
+         Either the current Lisp is neither CCL nor threaded SBCL nor ~
+         Lispworks, or this feature is missing.  Consequently, parallelism ~
+         will remain disabled.  Note that you can submit parallelism ~
+         primitives at the top level when parallel evaluation is disabled, ~
+         although they will not result in any parallel evaluation.~%")
+    #+acl2-par
+    (let ((observation-string
+           (case val
+             ((nil)
+              "Disabling parallel evaluation.  Parallelism primitives may ~
+               still be used, but during evaluation they will degrade to ~
+               their serial equivalents.")
+             ((t)
+              "Parallel evaluation is enabled, but parallelism primitives may ~
+               only be called within function definitions or macro top-level, ~
+               not at the top level of the ACL2 read-eval-print loop.  See ~
+               :DOC parallelism-at-the-top-level.")
+             (otherwise ; :bogus-parallelism-ok
+              "Parallel evaluation is enabled.  Parallelism primitives may be ~
+               called directly in the top-level loop, but without use of the ~
+               macro top-level, they will execute serially.  See :DOC ~
+               parallelism-at-the-top-level."))))
+      (pprogn
+       (f-put-global 'parallel-evaluation-enabled val state)
+       (observation ctx observation-string)
+       (value val))))))
 
 (defmacro set-parallel-evaluation (value)
+
+; Parallelism wart: Should we add spec-mv-let to this doc topic?
+
   ":Doc-Section Parallelism
 
-  enabling or disabling parallel evaluation~/
+  enabling or disabling parallel evaluation for parallelism primitives~/
 
-  ~l[parallel] and ~pl[parallelism-tutorial] for an introduction to parallel
-  evaluation in ACL2 using parallelism primitives ~ilc[pand], ~ilc[por],
-  ~ilc[plet], and ~ilc[pargs].
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].  ~l[parallel] and
+  ~pl[parallelism-tutorial] for an introduction to parallel evaluation in ACL2
+  using parallelism primitives ~ilc[pand], ~ilc[por], ~ilc[plet], and
+  ~ilc[pargs].
 
   ~bv[]
   General Forms:
@@ -206,31 +253,280 @@
                                            ':bogus-parallelism-ok))))
   `(let ((val ,value)
          (ctx 'set-parallel-evaluation))
-     (prog2$
-      #+acl2-par
-      t
-      #-acl2-par
-      (and val
-           (er hard ctx
-               "Parallelism can only be enabled in CCL or threaded SBCL. ~
-                Additionally, the feature :ACL2-PAR must be set when ~
-                compiling ACL2 (for example, by using `make' with argument ~
-                `ACL2_PAR=t'). Either the current Lisp is neither CCL nor ~
-                threaded SBCL, or this feature is missing.  Consequently, ~
-                parallelism will remain disabled.  Note that you can submit ~
-                parallelism primitives at the top level when parallel ~
-                evaluation is disabled, although they will not result in any ~
-                parallel evaluation.~%"))
-      (set-parallel-evaluation-fn
-       (cond ((consp val) (cadr val))
-             (t val))
-       ctx
-       state))))
+     (set-parallel-evaluation-fn
+      (cond ((consp val) (cadr val))
+            (t val))
+      ctx
+      state)))
+
+(defconst *waterfall-parallelism-values*
+  '(nil :full :top-level :resource-based :pseudo-serial))
+
+(defun waterfall-printing-value-for-parallelism-value (value)
+
+; Warning: Keep guard in sync with guard of set-waterfall-parallelism-fn.
+
+  (declare (xargs :guard (member-eq value *waterfall-parallelism-values*)))
+  (cond ((eq value nil)
+         :full)
+        ((eq value :full)
+         :limited)
+        ((eq value :top-level)
+         :limited)
+        ((eq value :resource-based)
+         :limited)
+        (t 
+         (assert$ (eq value :pseudo-serial)
+                  :limited))))
+
+; Parallelism wart: either support the reading of state by computed hints, or
+; explicitly disallow it with a user-friendly error message; modify :doc
+; unsupported-waterfall-parallelism-features accordingly.
+
+; Parallelism wart: figure out if :bdd hints are supported.  Given the call of
+; error-in-parallelism-mode@par in waterfall-step, it seems that they might not
+; be; yet, regressions may have passed with them.  One possible outcome: If
+; books/bdd/ tests fail, you might just modify translate-bdd-hint to cause a
+; nice error if watefall parallelism is enabled, and also mention that (once
+; again) in :doc unsupported-waterfall-parallelism-features.
+
+(defdoc unsupported-waterfall-parallelism-features
+
+; For a discussion of the wormhole issue referenced in the :doc string below,
+; see waterfall-print-clause-id@par.
+
+  ":Doc-Section ACL2::Parallelism
+
+  proof features not supported with waterfall-parallelism enabled~/
+
+  For a general introduction to ACL2(p), an experimental extension of ACL2 that
+  supports parallel execution and proof, ~pl[parallelism].  Please note that
+  although this extension is usable and, we hope, robust in its behavior, there
+  are still known issues to address beyond those listed explicitly below.  For
+  example, esoteric ``invalid speculation'' messages may appear.  More
+  generally, while we expect ACL2(p) to perform correctly, it may never have
+  the same level of attention to correctness as is given to ACL2;
+  ~pl[parallelism], specifically the ``IMPORTANT NOTE'' there.
+
+  Below we list proof features of ACL2 that are not yet supported when parallel
+  execution is enabled for the primary ACL2 proof process, generally known as
+  ``the Waterfall'', typically by calling ~ilc[set-waterfall-parallelism].
+
+  Please note that this topic is limited to the case that such waterfall
+  parallelism is enabled.  We believe that all ACL2 proof procedures are
+  supported when waterfall parallelism is disabled, even in executables that
+  support parallelism (~pl[compiling-acl2p]).
+
+  While we support ~il[clause-processor]s, we do not support those that modify
+  ~il[state].  At this time, such an attempt to modify ~il[state] may result in
+  a sub-optimal error message.
+
+  Computed hints are supported, as long as they don't modify ~il[state].
+  Computed hints may in principle read ~il[state], but support for such hints
+  may be incomplete.
+
+  ~il[Custom-keyword-hints] are unsupported, though they may work on occasion.
+
+  GNU Make versions 3.81 and 3.82 used to cause a lot of problems (version 3.80
+  somewhat less so), at least on Linux, when certifying books with CCL using
+  ~c[make] (~pl[book-makefiles].  CCL was updated around March 23, 2011 to fix
+  this problem, so if you get segfaults (for example), try updating your CCL.
+
+  The standard process for book certification will not use
+  waterfall-parallelism (~pl[set-waterfall-parallelism]), which is disabled by
+  default.  ~l[book-makefiles], which explains that ~il[acl2-customization]
+  files are ignored during that process unless specified explicitly on the
+  command line or in the environment.
+
+  Proof output can contain repeated printing of the same subgoal name.
+
+  ~il[Gag-mode] isn't supported.  However, ACL2(p) also prints key checkpoints
+  (for example ~pl[introduction-to-key-checkpoints]), but with a notion of
+  ``key checkpoint'' that does not take into account whether the goal is later
+  proved by induction.
+
+  The ~c[:]~ilc[brr] utility is not supported.
+
+  Time limits (~pl[with-prover-time-limit]) aren't supported.
+
+  The use of ~ilc[wormhole]s is not recommended, as there may be race
+  conditions.
+
+  If the host Lisp is Lispworks, you may see messages about misaligned conses.
+  The state of the system may be corrupted after such a message has been
+  printed.~/~/")
+
+(defun set-waterfall-parallelism-fn (val state)
+
+; Warning: Keep guard in sync with guard of
+; waterfall-printing-value-for-parallelism-value.
+
+; Parallelism wart: perhaps change the wording to make it more obvious that
+; there are two settings involved here, waterfall-parallelism and
+; waterfall-printing.
+
+  (declare (xargs :guard (member-eq val *waterfall-parallelism-values*)))
+  (let ((printing-value
+         (waterfall-printing-value-for-parallelism-value val)))
+    (cond
+     ((and (eq (f-get-global 'waterfall-parallelism state)
+               val)
+           (eq (f-get-global 'waterfall-printing state)
+               printing-value))
+      (pprogn (observation nil "No change in waterfall parallelism or ~
+                                waterfall printing.")
+              (value val)))
+     #-acl2-par
+     (val
+      (er soft 'set-waterfall-parallelism-fn
+          "Parallelism can only be enabled in CCL, threaded SBCL, or ~
+           Lispworks.  Additionally, the feature :ACL2-PAR must be set when ~
+           compiling ACL2 (for example, by using `make' with argument ~
+           `ACL2_PAR=t').  Either the current Lisp is neither CCL nor ~
+           threaded SBCL nor Lispworks, or this feature is missing.  ~
+           Consequently, parallel evaluation of the waterfall will remain ~
+           disabled."))
+     (t
+      (let ((observation-string
+             (case val
+               ((nil)
+                "Disabling parallel evaluation of the waterfall.  Setting ~
+                 waterfall-printing to ~x0 (see :DOC set-waterfall-printing).")
+               (:full
+                "Parallelizing the proof of every subgoal.  Setting ~
+                 waterfall-printing to ~x0 (see :DOC set-waterfall-printing).")
+               (:top-level
+                "Parallelizing the proof of top-level subgoals only.  Setting ~
+                 waterfall-printing to ~x0 (see :DOC set-waterfall-printing).")
+               (:pseudo-serial
+                "Running the version of the waterfall prepared for parallel ~
+                 execution (stateless).  However, we will evaluate this ~
+                 version of the waterfall serially.  Setting ~
+                 waterfall-printing to ~x0 (see :DOC set-waterfall-printing).")
+               (otherwise ; :resource-based
+                "Parallelizing the proof of every subgoal, as long as CPU ~
+                 core resources are available.  Setting waterfall-printing to ~
+                 ~x0 (see :DOC set-waterfall-printing)."))))
+        (pprogn
+         (f-put-global 'waterfall-parallelism val state)
+         (f-put-global 'waterfall-printing printing-value state)
+         (observation nil observation-string printing-value)
+         (value val)))))))
+
+; Parallelism wart: consider adding a :doc topic for waterfall-printing and
+; waterfall-parallelism that just point to set-waterfall-printing and
+; set-waterfall-parallelism, respectively.
+
+(defmacro set-waterfall-parallelism (value)
+
+  ":Doc-Section Parallelism
+
+  configuring the parallel evaluation of the waterfall~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
+
+  ~bv[]
+  General Forms:
+  (set-waterfall-parallelism nil) ; serial evaluation
+  (set-waterfall-parallelism :full)   ; always parallelize
+  (set-waterfall-parallelism :top-level) ; parallelize top-level subgoals
+  (set-waterfall-parallelism :resource-based) ; parallelize all subgoals, but
+                                              ; only when resources are 
+                                              ; available
+  (set-waterfall-parallelism :pseudo-serial)  ; serial evaluation of the
+                                              ; version of the waterfall made
+                                              ; for parallel execution
+                                              ; useful for debugging
+  ~ev[]
+  ~/
+
+  ~c[Set-waterfall-parallelism] takes an argument that specifies the enabling or
+  disabling of ~il[parallel] evaluation of ACL2's main proof process, the
+  waterfall.
+
+  It also sets state global ~c[waterfall-printing] to an appropriate value.
+  ~l[set-waterfall-printing].
+
+  Note that not all ACL2 features are supported when waterfall-parallelism is
+  set to non-nil.~/"
+
+; Parallelism wart: add a reference to
+; unsupported-waterfall-parallelism-features, above.
+
+; Parallelism wart: rename :psuedo-serial to :pseudo-parallel.
+
+  (declare (xargs :guard
+                  (or (member-eq value *waterfall-parallelism-values*)
+                      (and (consp value)
+                           (eq (car value) 'quote)
+                           (consp (cdr value))
+                           (null (cddr value))
+                           (member-eq (cadr value)
+                                      *waterfall-parallelism-values*)))))
+  `(let ((val ,value))
+     (set-waterfall-parallelism-fn
+      (cond ((consp val) (cadr val))
+            (t val))
+      state)))
+
+(defun set-waterfall-printing-fn (val state)
+  (declare (xargs :guard (member-eq val '(:full :limited))))
+  (cond
+   ((eq (f-get-global 'waterfall-printing state)
+        val)
+    (pprogn (observation nil "No change in waterfall printing.")
+            (value nil)))
+   #-acl2-par
+   (val
+    (er soft 'set-waterfall-printing-fn
+        "Customizing waterfall printing only makes sense in the #+acl2-par ~
+         builds of ACL2.  Consequently, the waterfall-printing option will ~
+         remain unchanged."))
+   (t
+    (pprogn
+     (f-put-global 'waterfall-printing val state)
+     (observation nil "Setting waterfall-printing to ~x0." val)
+     (value val)))))
+
+(defmacro set-waterfall-printing (value)
+
+  ":Doc-Section Parallelism
+
+  configuring the printing that occurs within the parallelized waterfall~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
+
+  ~bv[]
+  General Forms:
+  (set-waterfall-printing :full)    ; print everything
+  (set-waterfall-printing :limited) ; print a subset that's thought to be useful
+  ~ev[]
+  ~/
+
+  ~c[Set-waterfall-printing] takes an argument that indicates how much
+  printing should occur when executing ACL2 with the parallelized version of the
+  waterfall.  It only affects the printing that occurs when parallelism mode is
+  enabled for the waterfall (~pl[set-waterfall-parallelism]).
+  ~/"
+
+  (declare (xargs :guard (member-equal value
+                                       '(:full ':full
+                                               :limited ':limited))))
+  `(let ((val ,value))
+     (set-waterfall-printing-fn
+      (cond ((consp val) (cadr val))
+            (t val))
+      state)))
 
 (defdoc parallelism-at-the-top-level
   ":Doc-Section Parallelism
 
   parallel evaluation in the ACL2 top-level loop~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
 
   Calls of parallelism primitives made explicitly in the ACL2 top-level loop,
   as opposed to inside function bodies, will never cause parallel evaluation.
@@ -251,7 +547,7 @@
   ~ev[]
 
   One trivial way to enable parallel evaluation of a form is to surround it
-  with a call to macro ~l[top-level].  For example, consider the following use.
+  with a call to macro ~il[top-level].  Consider the following example.
   ~bv[]
   (top-level (pargs (cons (expensive-fn-1 4) (expensive-fn-2 5))))
   ~ev[]
@@ -281,6 +577,9 @@
   ":Doc-Section Parallelism
 
   a tutorial on how to use the parallelism library.~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
 
   In this topic we introduce the ACL2 parallelism primitives using the example
   of a doubly-recursive Fibonacci function, whose basic definition is as
@@ -561,6 +860,9 @@
   ":Doc-Section Parallelism
   limit the amount of parallelism~/
 
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
+
   Some function calls are on arguments whose evaluation time is long enough to
   warrant parallel evaluation, while others are not.  A granularity form can be
   used to make appropriate restrictions on the use of parallelism.~/
@@ -666,6 +968,9 @@
   ":Doc-Section Parallelism
   performance issues for parallel evaluation~/
 
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
+
   ~l[granularity] for an important construct that limits the spawning of
   parallel computations, which can be important when a computation is too
   short-lived to warrant a separate thread.
@@ -696,9 +1001,16 @@
   (time$ (length (sets::pmergesort-exec *x* 0)))
   ~ev[]~/~/")
 
+; Parallelism wart: Add a section on waterfall-parallelism-performance.  It
+; should be a discussion of the advantages of each argument to
+; set-waterfall-parallelism.
+
 (defdoc early-termination
   ":Doc-Section Parallelism
   early termination for ~ilc[pand] and ~ilc[por].~/~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
 
   The evaluation of ~c[(and expr1 expr2)] returns ~c[nil] if ~c[expr1]
   evaluates to ~c[nil], avoiding the evaluation of ~c[expr2].  More generally,
@@ -807,6 +1119,9 @@
 
   parallel evaluation of arguments in a function call~/
 
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
+
   ~bv[]
   Example Forms:
   (pargs (binary-+ (fibonacci (- x 1)) (fibonacci (- x 2))))
@@ -858,6 +1173,9 @@
   ":Doc-Section Parallelism
 
   parallel version of ~ilc[let]~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
 
   ~bv[]
   Example Forms:
@@ -920,6 +1238,9 @@
   ":Doc-Section Parallelism
 
   parallel, Boolean version of ~ilc[and]~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
 
   ~bv[]
   Example Forms:
@@ -1016,6 +1337,9 @@
   ":Doc-Section Parallelism
 
   parallel, Boolean version of ~ilc[or]~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
 
   ~bv[]
   Example Forms:
@@ -1265,3 +1589,120 @@
 ;                    (ttree2 (cdr pair2)))
 ;               (cons (cons term rewritten-args)
 ;                     (cons-tag-trees ttree1 ttree2)))))))
+
+#+(or acl2-loop-only (not acl2-par))
+(defmacro spec-mv-let (bindings computation body)
+
+; Parallelism wart: add pointers to this doc topic inside other
+; parallelism doc topics.
+
+  ":Doc-Section Parallelism
+
+  modification of ~ilc[mv-let] supporting speculative and parallel execution~/
+
+  This ~il[documentation] topic relates to the experimental extension of ACL2
+  supporting parallel evaluation and proof; ~pl[parallelism].
+
+  ~bv[]
+  Example Form:
+  (defun pfib-with-step-count (x)
+    (declare (xargs :mode :program))
+    (if (or (zp x) (< x 33))
+        (fib-with-step-count x)
+      (spec-mv-let 
+       (a cnt1)
+       (pfib-with-step-count (- x 1))
+       (mv-let (b cnt2)
+               (pfib-with-step-count (- x 2))
+               (if t
+                   (mv (+ a b)
+                       (+ 1 cnt1 cnt2))
+                 (mv \"speculative result is always needed\"
+                     -1))))))~/
+  
+  General Form:
+  (spec-mv-let
+   (v1 ... vn)  ; bind distinct variables
+   <spec>       ; evaluate speculatively; return n values
+   (mv-let
+    (w1 ... wk) ; bind distinct variables
+    <eager>     ; evaluate eagerly
+    (if <test>  ; use results from <spec> if true
+        <typical-case> ; may mention v1 ... vn
+      <abort-case>)))  ; does not mention v1 ... vn
+  ~ev[]
+
+  Our design of ~c[spec-mv-let] is guided by its use in ACL2 source code to
+  parallelize part of ACL2's proof process, in the experimental parallel
+  extension of ACL2.  The user can think of ~c[spec-mv-let] as a speculative
+  version of ~ilc[mv-let].  (In ordinary ACL2, the semantics agree with this
+  description but without speculative or parallel evaluation.)
+
+  Evaluation of the above general form proceeds as suggested by the comments.
+  First, ~c[<spec>] is executed speculatively.  Control then passes immediately
+  to the ~ilc[mv-let] call, without waiting for the result of evaluating
+  ~c[<spec>].  The variables ~c[(w1 ... wk)] are bound to the result of
+  evaluating ~c[<eager>], and then ~c[<test>] is evaluated.  If the value of
+  ~c[<test>] is true, then the values of ~c[(v1 ... vn)] are needed, and
+  ~c[<typical-case>] blocks until they are available.  If the value of
+  ~c[<test>] is false, then the values of ~c[(v1 ... vn)] are not needed, and
+  the evaluation of ~c[<spec>] may be aborted.
+
+  The calls to ~c[mv-let] and to ~c[if] displayed above in the General Form are
+  an essential part of the design of ~c[spec-mv-let], and are thus required.
+
+  The following definition of ~c[fib-with-step-count] completes the example
+  above:
+
+  ~bv[]
+  (defun fib-with-step-count (x)
+  (declare (xargs :mode :program))
+  (cond ((<= x 0)
+         (mv 0 1))
+        ((= x 1) (mv 1 1))
+        (t (mv-let (a cnt1)
+                   (fib-with-step-count (- x 1))
+                   (mv-let (b cnt2) 
+                           (fib-with-step-count (- x 2))
+                           (mv (+ a b)
+                               (+ 1 cnt1 cnt2)))))))
+  ~ev[]~/"
+
+  (assert$ 
+   (and (true-listp body) 
+        (equal (length body) 4) 
+        (or (equal (car body) 'mv-let@par)
+            (equal (car body) 'mv-let)
+            (equal (car body) 'mv?-let)))
+   (let* ((inner-let (car body))
+          (inner-bindings (cadr body))
+          (inner-body (caddr body))
+          (ite (cadddr body)))
+     (assert$ (and (true-listp ite) 
+                   (equal (length ite) 4) 
+                   (equal (car ite) 'if))
+              (let* ((test (cadr ite))
+                     (true-branch (caddr ite))
+                     (false-branch (cadddr ite)))
+                `(check-vars-not-free
+
+; Keep the check for variable name "the-very-obscure-feature" in sync with the
+; variable name in the raw Lisp version.
+
+                  (the-very-obscure-future)
+                  (,inner-let
+                   ,inner-bindings
+                   ,inner-body
+                   (if (check-vars-not-free ,bindings ,test)
+                       (mv?-let ,bindings
+                                ,computation
+                                ,true-branch)                     
+                     (check-vars-not-free ,bindings ,false-branch)))))))))
+
+; Parallelism wart: when set-verify-guards-eagerness is 0, and there is a guard
+; violation in subfunctions that are evaluating in the non-main-thread, we get
+; errors that aren't user friendly (the errors occur in the non-main-threads).
+; I think that the solution to this problem might necessitate catching the
+; errors and re-causing them.  Hitting ctrl+c causes the main thread to abort
+; waiting on the result from those threads, and allows the interactive session
+; to resume.

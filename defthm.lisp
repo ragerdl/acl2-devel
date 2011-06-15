@@ -1418,7 +1418,7 @@
                       variable~#2~[~/s~] ~&2 on the right-hand side of the ~
                       rule, which ~#2~[is~/are~] not bound on the left-hand ~
                       side~#3~[~/ or in the hypothesis~/ or in any ~
-                      hypothesis~]. This can cause new variables to be ~
+                      hypothesis~].  This can cause new variables to be ~
                       introduced into the proof, which may surprise you."
                      token name
                      (set-difference-eq rhs-vars
@@ -7162,12 +7162,13 @@
 ; example of this situation.
 
                              (mv
-                              (if (tagged-object 'fc-derivation ttree)
+                              (if (tagged-objectsp 'fc-derivation ttree)
                                   (er hard
                                       "Somehow an 'fc-derivation, ~x0, has ~
                                        found its way into the ttree returned ~
                                        by type-set-implied-by-term."
-                                      (tagged-object 'fc-derivation ttree))
+                                      (car (tagged-objects 'fc-derivation
+                                                           ttree)))
                                 (msg "~x0 is an illegal :TYPE-PRESCRIPTION ~
                                       lemma because in determining the ~
                                       type-set implied for its :TYPED-TERM, ~
@@ -7181,7 +7182,7 @@
                                       be very helpful to report this error to ~
                                       the authors."
                                      name typed-term
-                                     (tagged-objects 'assumption ttree nil)))
+                                     (tagged-objects 'assumption ttree)))
                               nil nil nil nil nil))
                             (t (mv nil hyps concl ts vars ttree))))))))))))))))
 
@@ -11381,7 +11382,7 @@
 ; Classes has already been translated and hence is known to be a true
 ; list of fully elaborated rule classes.  Each class has a :COROLLARY
 ; term and we check that the term can be used as a rule of the
-; indicated class.  We return a tag tree supporting the claim.
+; indicated class.  We return a tag-tree supporting the claim.
 
   (cond ((null classes) (value nil))
         (t (er-let*

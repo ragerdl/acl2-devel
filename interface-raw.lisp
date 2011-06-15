@@ -1019,10 +1019,10 @@
   x)
 
 (defun i-large-integer ()
-  (throw-raw-ev-fncall '(ev-fncall-null-body-er i-large-integer)))
+  (throw-raw-ev-fncall '(ev-fncall-null-body-er nil i-large-integer)))
 
 (defun-*1* i-large-integer ()
-  (throw-raw-ev-fncall '(ev-fncall-null-body-er i-large-integer)))
+  (throw-raw-ev-fncall '(ev-fncall-null-body-er nil i-large-integer)))
 
 )
 
@@ -1372,7 +1372,7 @@
                     (prog2$ formals ; avoid compiler warning
                             `(,(*1*-symbol fn) ,@(cdr def))))
                    ((fn formals
-                        ('throw-without-attach fn formals))
+                        ('throw-without-attach 'nil fn formals))
                     (prog2$ formals ; avoid compiler warning
                             `(,(*1*-symbol fn) ,@(cdr def))))
                    (& (interface-er 
@@ -1690,33 +1690,84 @@
 ; NOTE: we have to test for live stobjs before we evaluate the guard, since the
 ; Common Lisp guard may assume all stobjs are live.  We actually only need
 ; stobjs to be live that occur in the guard in other than stobj recognizer
-; calls; but we take the easy way out and check that all stobjs are live before
-; evaluating the raw Lisp guard.  After all, the cost of that check is only
-; some eq tests.
+; calls; but we take the easy way out (except for a stobj-flag case below) and
+; check that all stobjs are live before evaluating the raw Lisp guard.  After
+; all, the cost of that check is only some eq tests.
 
-                      `(cond ,(cond ((eq live-stobjp-test t)
-                                     `(,guard
-                                       (return-from ,*1*fn (,fn ,@formals))))
-                                    (t
-                                     `((if ,live-stobjp-test ,guard ,*1*guard)
-                                       ,(assert$
+                      `(cond
+                        ,(cond
+                          ((eq live-stobjp-test t)
+                           `(,guard
+                             (return-from ,*1*fn (,fn ,@formals))))
+                          (t
+                           `((if ,live-stobjp-test
+                                 ,(if stobj-flag
+
+; We disallow attachments during evaluation of the stobj updater.  The
+; following example, which is a slight modification of one provided by Jared
+; Davis, shows why.
+
+; (progn
+;   (defstub foop (x) t)
+;   (defun barp (x)
+;     (declare (xargs :guard t))
+;     (or (not x)
+;         (foop x)))
+;   (defstobj st
+;     (fld :type (satisfies barp)))
+;   (defthm barp-of-fld
+;     (implies (stp st)
+;              (barp (fld st))))
+;   (defun my-integerp (x)
+;     (declare (xargs :guard t))
+;     (integerp x)))
+; (defattach foop my-integerp)
+; (trace$ foop barp my-integerp)
+; (update-fld 3 st) ; note that foop calls its attachment, my-integerp
+; (defattach foop consp)
+; (barp (fld st)) ; nil (ouch)
+; (stp st) ; returns t, but is really (logically) nil
+
+; The code just below ensures that the updater will be evaluated without
+; attachments.  It might needlessly ensure that other functions introduced by
+; defstobj (for the given stobj-flag) are evaluated without attachments, for
+; example if the getprop below returns nil because the necessary property has
+; not yet been put into wrld.  But as of this writing, the test seems to apply
+; only to stobj updaters and resize functions.
+
+                                      (let ((stobjs-out
+                                             (getprop
+                                              fn
+                                              'stobjs-out
+                                              nil
+                                              'current-acl2-world
+                                              wrld)))
+                                        (cond
+                                         ((and stobjs-out ; property is there
+                                               (all-nils stobjs-out))
+                                          guard)
+                                         (t `(let ((*aokp* nil))
+                                                ,guard))))
+                                    guard)
+                               ,*1*guard)
+                             ,(assert$
 
 ; No user-stobj-based functions are primitives for which we need to give
 ; special consideration to safe-mode.
 
-                                         (not guarded-primitive-p)
-                                         `(cond (,live-stobjp-test
-                                                 (return-from ,*1*fn
-                                                              (,fn ,@formals))))))))
-                             ,@(cond (super-stobjs-in
-                                      `((t ,fail_guard)))
-                                     (guarded-primitive-p
-                                      `(((or ,guard-checking-is-really-on-form
-                                             ,safe-form)
-                                         ,fail_safe)))
-                                     (t
-                                      `((,guard-checking-is-really-on-form
-                                         ,fail_guard))))))))
+                               (not guarded-primitive-p)
+                               `(cond (,live-stobjp-test
+                                       (return-from ,*1*fn
+                                                    (,fn ,@formals))))))))
+                        ,@(cond (super-stobjs-in
+                                 `((t ,fail_guard)))
+                                (guarded-primitive-p
+                                 `(((or ,guard-checking-is-really-on-form
+                                        ,safe-form)
+                                    ,fail_safe)))
+                                (t
+                                 `((,guard-checking-is-really-on-form
+                                    ,fail_guard))))))))
               (if cl-compliant-p-optimization
                   (assert$ (not guard-is-t) ; already handled way above
                            (list cl-compliant-code-guard-not-t))
@@ -2668,23 +2719,22 @@
                  (and (access memoize-info-ht-entry entry :ext-anc-attachments)
                       t))
                 (cl-defun (access memoize-info-ht-entry entry :cl-defun)))
-           (assert$ condition
-                    (push `(memoize-fn ',name
-                                       :condition ',condition
-                                       :inline ',inline
-                                       :trace ',trace
-                                       ,@(and commutative
-                                              `(:commutative t))
-                                       ,@(and forget
-                                              `(:forget t))
-                                       ,@(and memo-table-init-size
-                                              `(:memo-table-init-size
-                                                ',memo-table-init-size))
-                                       ,@(and aokp
-                                              `(:aokp ',aokp))
-                                       ,@(and cl-defun
-                                              `(:cl-defun ',cl-defun)))
-                          (get name '*undo-stack*)))))
+           (push `(memoize-fn ',name
+                              :condition ',condition
+                              :inline ',inline
+                              :trace ',trace
+                              ,@(and commutative
+                                     `(:commutative t))
+                              ,@(and forget
+                                     `(:forget t))
+                              ,@(and memo-table-init-size
+                                     `(:memo-table-init-size
+                                       ',memo-table-init-size))
+                              ,@(and aokp
+                                     `(:aokp ',aokp))
+                              ,@(and cl-defun
+                                     `(:cl-defun ',cl-defun)))
+                 (get name '*undo-stack*))))
         (otherwise
          (er hard 'maybe-push-undo-stack
              "Unrecognized CLTL-COMMAND spawn ~x0"
@@ -4220,18 +4270,24 @@
                            (msg file-is-older-str ofile cfile))
                           (t
                            (msg "the compiled file is missing")))))
-        (catch 'missing-compiled-book
-          (state-global-let*
-           ((raw-include-book-dir-alist nil)
-            (connected-book-directory directory-name))
-           (let ((*load-compiled-stack* (acons file
-                                               load-compiled-file
-                                               *load-compiled-stack*)))
-             (cond (ofile-p (load-compiled ofile t))
-                   (t (with-reckless-read (load efile))))
-             (value (setq status (if to-be-compiled-p
-                                     'to-be-compiled
-                                   'complete))))))
+        (er-let* ((val
+
+; Silly binding works around bogus compiler warning in Lispworks 6.0.1, which
+; probably will be fixed in subsequent Lispworks releases.
+
+                   (catch 'missing-compiled-book
+                     (state-global-let*
+                      ((raw-include-book-dir-alist nil)
+                       (connected-book-directory directory-name))
+                      (let ((*load-compiled-stack* (acons file
+                                                          load-compiled-file
+                                                          *load-compiled-stack*)))
+                        (cond (ofile-p (load-compiled ofile t))
+                              (t (with-reckless-read (load efile))))
+                        (value (setq status (if to-be-compiled-p
+                                                'to-be-compiled
+                                              'complete))))))))
+          (value val))
         (hcomp-transfer-to-hash-tables)
         (assert$ (member-eq status '(to-be-compiled complete incomplete))
                  status))))))
@@ -5102,9 +5158,7 @@
                     (and #+gcl (not user::*fast-acl2-gcl-build*)
                          boot-strap-flg) ; delete for build speedup (see above)
                     (and
-                     (not (eq (f-get-global 'ld-skip-proofsp
-                                            *the-live-state*)
-                              'include-book))
+                     (not *inside-include-book-fn*)
                      (default-compile-fns wrld)))
                    (dolist (def new-defs)
                      (assert$
@@ -5239,9 +5293,7 @@
                                        t)
             (when (and (eq (f-get-global 'compiler-enabled *the-live-state*)
                            t)
-                       (not (eq (f-get-global 'ld-skip-proofsp
-                                              *the-live-state*)
-                                'include-book))
+                       (not *inside-include-book-fn*)
                        (default-compile-fns wrld))
               (dolist (def new-defs)
                 (assert$
@@ -6258,7 +6310,7 @@
   (and (consp form)
        (case (car form)
          ((defun defund defn defproxy defun-nx defun-one-output defstub
-            defmacro defabbrev)
+            defmacro defabbrev defun@par)
           (setf (gethash (cadr form) ht)
                 form))
          (defun-for-state
@@ -6277,7 +6329,7 @@
                          (nth 1 form)))))
             (setf (gethash name ht)
                   form)))
-         ((mutual-recursion progn)
+         ((mutual-recursion mutual-recursion@par progn)
           (loop for x in (cdr form)
                 do (note-fns-in-form x ht)))
          (encapsulate
@@ -6299,8 +6351,10 @@
            defconst
            defconstant
            defdoc
+           define-@par-macros
            define-trusted-clause-processor ; should handle :partial-theory
            deflabel
+           deflock
            defparameter
            defpkg
            defstruct
@@ -6354,7 +6408,7 @@
 
 ; This function should be called with acl2-files equal to *acl2-files*, in the
 ; build directory.  See the comment about redundant definitions in
-; chk-acceptable-defuns for a pertinent explanation.
+; chk-acceptable-defuns-redundancy for a pertinent explanation.
 
   (let ((filenames (loop for x in acl2-files
                          when (not (raw-source-name-p x))
@@ -6612,6 +6666,11 @@ Missing functions:
 ; initialization we used to use, it was impossible to use theory expressions in
 ; the defthms in axioms.lisp because the necessary theory functions were not
 ; yet defined and so trans-eval balked on them.
+
+  (when (null distributed-books-dir)
+    (let ((dir (getenv$-raw "ACL2_SYSTEM_BOOKS")))
+      (when (and dir (not (equal dir "")))
+        (setq distributed-books-dir dir))))
 
   (with-warnings-suppressed
 
@@ -6940,6 +6999,16 @@ Missing functions:
                   (setq *acl2-time-limit* 0)
                   (invoke-restart 'continue))
                  (t
+
+; Parallelism wart: As of May 16, 2011, we also reset all parallelism variables
+; in Rager's modified version of the source code.  However, that strikes Rager
+; as strange, since we went through so much trouble to find out where we should
+; reset parallelism variables. So, it is now commented out, today, May 16, 
+; 2011, and we will wait to see what happens.
+
+;                  #+acl2-par
+;                  (reset-all-parallelism-variables)
+
                   (ignore-errors ; might not be in scope of catch
                     (throw 'local-top-level :our-abort))))))))
 
@@ -7013,6 +7082,33 @@ Missing functions:
                               cfb2a)
                              (t nil))))))))))))
 
+#+(and acl2-par lispworks)
+(defun spawn-extra-lispworks-listener ()
+
+; In Lispworks, we spawn a thread for the listener before we exit lp for the
+; first time, so that when we exit lp, multiprocessing does not stop.  This
+; strategy is derived from the following quote, from Martin Simmons, of 
+; Lispworks.
+;
+; "If you want it to run a normal REPL, then you could call
+; lw:start-tty-listener when acl2::lp returns.  That will make a new thread
+; running the REPL, which will prevent multiprocessing from stopping."
+;
+; Another strategy, which was never released, involved following the
+; multiprocessing example in section 15.13 of the Lispworks 6.0 manual.  To
+; quickly outline that strategy, we (1) renamed "lp" to "lp1", (2) defined "lp"
+; to spawn a thread that called "lp1", (3) saved the Lispworks image with the
+; ":multiprocessing t" flag, and (4) ensured that the Lispworks image's restart
+; function was acl2-default-restart-function, which called "lp".
+;
+; We feel that Martin's suggested implementation is simpler, and so we
+; use that.
+;
+; We rely on the following property of lw:start-tty-listener: if the tty
+; listener is already running, calling lw:start-tty-listener does nothing.
+
+  (lw:start-tty-listener))
+
 (defun lp (&rest args)
 
 ; This function can only be called from within raw lisp, because no ACL2
@@ -7021,6 +7117,19 @@ Missing functions:
 ; Common Lisps when the given file or directory does not exist, in which case
 ; our-truename will generally return nil.  Hence, we sometimes call
 ; our-truename on "" rather than on a file name.
+  
+; Parallelism wart: is the following call to reset parallelism variables needed?
+
+  #+acl2-par
+  (reset-all-parallelism-variables)
+
+; Parallelism wart: The following call to set-waterfall-parallelism should
+; remain commented out in any released version of ACL2.  Once we are done with
+; the parallelism project, we should delete this wart, and the commented code.
+
+;  #+acl2-par
+;  (unless *lp-ever-entered-p*
+;    (set-waterfall-parallelism-fn :resource-based *the-live-state*))
 
   (let ((state *the-live-state*)
         #+(and gcl (not ansi-cl))
@@ -7056,10 +7165,20 @@ Missing functions:
 ; We formerly set *debugger-hook* at the top level using setq, just below the
 ; definition of our-abort.  But that didn't work in Lispworks, where that value
 ; persisted right up to the saving of an image yet *debugger-hook* was nil
-; after starting up that image.
+; after starting up that image.  Apparently Lispworks 6.0 sets *debugger-hook*
+; globally to nil when input comes from a file, which is how ACL2 is built,
+; rather than standard-input,
 
         #-(and gcl (not ansi-cl))
         (setq *debugger-hook* 'our-abort)
+
+; Even with the setting of *stack-overflow-behaviour* to nil in acl2-init.lisp,
+; we cannot eliminate the following form for LispWorks.  (We tried with
+; LispWorks 6.0 and Lispworks 6.0.1, but we got segmentation faults when
+; certifying books/concurrent-programs/bakery/stutter2 and
+; books/unicode/read-utf8.lisp.)
+
+        #+lispworks (cl-user::extend-current-stack 400)
 
 ; Acl2-default-restart isn't enough in Allegro, at least, to get the new prompt
 ; when we start up:
@@ -7174,6 +7293,8 @@ Missing functions:
                 nil))))
     (fms "Exiting the ACL2 read-eval-print loop.  To re-enter, execute (LP)."
          nil *standard-co* *the-live-state* nil)
+    #+(and acl2-par lispworks)
+    (spawn-extra-lispworks-listener)
     (values)))
 
 (defmacro lp! (&rest args)
@@ -7206,7 +7327,7 @@ Missing functions:
 ; full-book-name have already been evaluated and (if appropriate) proclaimed,
 ; hence in particular so that macros have been defined.
 
-  (er-progn
+  (progn
    (chk-book-name full-book-name full-book-name 'acl2-compile-file
                   *the-live-state*)
    (let ((*readtable* *acl2-readtable*)

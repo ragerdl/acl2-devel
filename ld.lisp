@@ -838,7 +838,7 @@
   pathname is considered relative to the connected book directory (~pl[cbd]).
   (2) If this variable is not already defined, then its value is set to
   ~c[NONE] when the ACL2 makefile system is invoked (specifically,
-  ~c[books/Makefile-generic]).
+  ~c[books/Makefile-generic]), e.g., for a regression.
 
   o Otherwise (empty environment variable value), file
   ~c[\"acl2-customization.lsp\"] or ~c[\"acl2-customization.lisp\"] on the
@@ -1405,10 +1405,10 @@
 ; is re-entered after that throw is caught, and here we are!
 
 ; In rare cases we might get here without (1) or (2) holding -- say, after :a!.
-; But it's OK to call reset-parallelism-variables in such cases; we simply
+; But it's OK to call reset-all-parallelism-variables in such cases; we simply
 ; prefer to minimize the frequency of calls, for efficiency.
 
-    (reset-parallelism-variables))
+    (reset-all-parallelism-variables))
 
   (pprogn
     (f-put-ld-specials new-ld-specials-alist state)
@@ -4527,7 +4527,7 @@
   The ~il[command] ~ilc[ubt!] has been modified so that it never causes or
   reports an error.  ~l[ubt!].
 
-  ACL2 now works in Harlequin Lispworks.
+  ACL2 now works in Harlequin LispWorks.
 
   The user can now specify the ~c[:trigger-terms] for ~c[:]~ilc[linear] rules.
   ~l[linear].
@@ -7027,9 +7027,9 @@
 
   ACL2 Version  2.7 Notes on System-level Changes~/
 
-  ACL2 now runs (once again) under Lispworks, specifically, Lispworks 4.2.0.
+  ACL2 now runs (once again) under LispWorks, specifically, LispWorks 4.2.0.
   However, we needed a patch, which presumably will be unnecessary after 4.2.7.
-  From Lispworks support:
+  From LispWorks support:
   ~bq[]
   Users with LispWorks4.2.7 should ask us at lisp-support@xanalys.com
   for the transform-if-node patch. It will be helpful if they quote
@@ -7336,7 +7336,7 @@
 
   + ACL2 now starts up inside the ACL2 loop ~-[] that is, ~c[(]~ilc[LP]~c[)] is
   executed automatically ~-[] when built on CLISP or Allegro CL.  This was
-  already the case for GCL and CMUCL, and it still is not true for Lispworks.
+  already the case for GCL and CMUCL, and it still is not true for LispWorks.
 
   + ~l[note-2-8-ordinals] for a discussion of a significant change in ordinal
   represtation, and in particular, for how to preserve existing proofs that
@@ -7921,7 +7921,7 @@
   (CLISP and Allegro CL only) ACL2 now starts up inside the ACL2 loop ~-[] that
   is, ~c[(]~ilc[LP]~c[)] is executed automatically ~-[] when built on CLISP or
   Allegro CL.  This was already the case for GCL and CMUCL, and it still is not
-  true for Lispworks.  Thanks to Joe Corneli for bringing the CLISP
+  true for LispWorks.  Thanks to Joe Corneli for bringing the CLISP
   command-line option ~c[\"-i\"] to our attention, which led to this CLISP
   change and inspired reconsideration of how to do this for Allegro CL.
 
@@ -10139,7 +10139,7 @@
   We fixed an inefficiency that could cause an ~ilc[ld] command to seem to hang
   at its conclusion.  Thanks to Sandip Ray for pointing out this problem.
 
-  We checked that ACL2 runs under Lispworks 4.4.5 (last checked before 4.3),
+  We checked that ACL2 runs under LispWorks 4.4.5 (last checked before 4.3),
   and have inhibited redefinition warnings.
 
   Two changes have been made on behalf of congruence-based reasoning.  Thanks
@@ -10377,7 +10377,7 @@
 
 ; Added a call to the garbage collector before saving in Allegro CL, CMUCL,
 ; SBCL, CLISP, and OpenMCL.  (There was already such a call in GCL and
-; Lispworks.)  We saw a little performance increase and significant shrinkage
+; LispWorks.)  We saw a little performance increase and significant shrinkage
 ; of the saved image when we did this for Allegro CL.
 
   :doc
@@ -11765,7 +11765,7 @@
 ;   :a!
 ;   (thm (equal (car (cons x y)) x))
 
-; The modification for tag trees caused about a 1% slowdown.  However, a
+; The modification for tag-trees caused about a 1% slowdown.  However, a
 ; trivial modification to ancestors-check, which avoids recursion if ancestors
 ; is nil, caused about a 1.5% speedup.
 
@@ -12129,7 +12129,7 @@
   addition.
 
   The algorithms were modified for collecting up rule names and other
-  information used in proofs, into so-called ``tag trees''.  Tag trees are now
+  information used in proofs, into so-called ``tag-trees''.  Tag-trees are now
   free of duplicate objects, and this change can dramatically speed up some
   proofs that involve many different rules.  Thanks to Eric Smith for doing
   some profiling that brought this issue to our attention, and for reporting
@@ -13714,7 +13714,7 @@
   Distributed directory ~c[doc/HTML/] now again includes installation
   instructions, in ~c[doc/HTML/installation/installation.html].
 
-  In certain Common Lisp implementations ~-[] CCL (OpenMCL) and Lispworks, at
+  In certain Common Lisp implementations ~-[] CCL (OpenMCL) and LispWorks, at
   least ~-[] an interrupt could leave you in a break such that quitting the
   break would not show the usual summary of key checkpoints.  This has been
   fixed.
@@ -15025,8 +15025,8 @@
   category, though of course many changes could be placed in more than one
   category.
 
-  Note that (starting with ACL2 Version  3.5) Lispworks is no longer supported
-  as a platform for ACL2, as the Lispworks compiler could not handle the ACL2
+  Note that (starting with ACL2 Version  3.5) LispWorks is no longer supported
+  as a platform for ACL2, as the LispWorks compiler could not handle the ACL2
   sources; see comments in the ACL2 sources about ``function size'' being ``too
   large''.
 
@@ -17401,6 +17401,17 @@
 ; We took preliminary steps towards removing uses of the big-clock field of
 ; state.
 
+; Modified deletion of compiled file of acl2-fns.lisp to occur at the Lisp
+; level instead of using GNUmakefile.
+
+; Deleted delete-pair and remove-first-pair, which each duplicated the
+; functionality of delete-assoc-eq.
+
+; Eliminated cons-into-ttree in favor of cons-tag-trees.
+
+; Moved assert$ to the right place in cmp-to-error-triple (thanks to David
+; Rager for correcting an error in our initial change).
+
   :Doc
   ":Doc-Section release-notes
 
@@ -17526,6 +17537,49 @@
   ~c[pc-print-macroexpansion-flg], and ~c[pc-print-prompt-and-instr-flg],
   respectively.
 
+  ~il[State] globals ~c[fmt-hard-right-margin] and ~c[fmt-soft-right-margin]
+  are now untouchable (~pl[set-fmt-hard-right-margin] and
+  ~pl[push-untouchable]).  If you bind these ~c[state] globals with
+  ~c[state-global-let*], then you will need to do so with appropriate setteres
+  to restore their values, for example as follows.
+  ~bv[]
+    (state-global-let*
+     ((fmt-hard-right-margin 500 set-fmt-hard-right-margin)
+      (fmt-soft-right-margin 480 set-fmt-soft-right-margin))
+     ...)
+  ~ev[]
+
+  The error message has been improved for the case of evaluating an undefined
+  function that has an attachment (~pl[defattach]).  Thanks to Jared Davis for
+  sending the following example, which illustrates the additional part of the
+  message.
+  ~bv[]
+    ACL2 !>(defstub foo (x) t)
+    [[... output omitted ...]]
+    ACL2 !>(defattach foo identity)
+    [[... output omitted ...]]
+    ACL2 !>(defconst *x* (foo 3))
+
+
+    ACL2 Error in ( DEFCONST *X* ...):  ACL2 cannot ev the call of undefined
+    function FOO on argument list:
+
+    (3)
+
+    Note that because of logical considerations, attachments (including
+    IDENTITY) must not be called in this context.
+
+    [[... additional output omitted ...]]
+  ~ev[]
+
+  The directory string supplied to ~ilc[add-include-book-dir] no longer must
+  terminate with the `~c[/]' character, as had been required in some Lisp
+  implementations.  Thanks to Sol Swords for bringing this issue to our
+  attention.
+
+  We no longer print induction schemes with ~il[gag-mode]; use ~c[:]~ilc[pso]
+  if you want to see them.  Thanks to Dave Greve for this suggestion.
+
   ~st[NEW FEATURES]
 
   New macros ~ilc[mv?-let] and ~ilc[mv?] extend the funtionality of
@@ -17545,9 +17599,11 @@
   ~c[(defattach ancestors-check <your_function>)].  Thanks to Robert Krug for
   providing the necessary proof support, which we modified only in small ways.
 
-  A new macro, ~c[observation-cw], provides formatted printing of observations
-  without ~ilc[state]: ~pl[observation].  Thanks to Harsh Raju Chamarthi for
-  requesting this utility, which is now used in some of the distributed books.
+  New macros, ~c[observation-cw] and ~c[warning$-cw], provide formatted
+  printing of ~ilc[observation]s and warnings (respectively) without
+  ~ilc[state].  Thanks to Harsh Raju Chamarthi and David Rager for requests
+  leading to these utilities.  ~c[Observation-cw] is now used in some of the
+  distributed books (thanks to Robert Krug for useful interaction for that).
 
   The ~il[proof-checker] command ~c[type-alist] (~pl[proof-checker-commands])
   now takes an optional third argument that causes the production of
@@ -17574,12 +17630,37 @@
   The new utility ~ilc[with-prover-step-limit] is analogous to the utility
   ~ilc[with-prover-time-limit], but counts ``prover steps'' rather than
   checking for time elapsed.  ~l[with-prover-step-limit].  Also
-  ~pl[set-prover-step-limit] to set the prover step-limit globally.  Note that
-  just as ~ilc[with-prover-time-limit] may now be used to create ~il[events],
-  as discussed just above, ~ilc[with-prover-step-limit] may also be used to
-  create ~il[events].
+  ~pl[set-prover-step-limit] to provide a default step-limit.  Note that just
+  as ~ilc[with-prover-time-limit] may now be used to create ~il[events], as
+  discussed just above, ~ilc[with-prover-step-limit] may also be used to create
+  ~il[events].  Thanks to Carl Eastlund for requesting support for step-limits.
+
+  The macro ~ilc[progn$] is analogous to ~ilc[prog2$], but allows an arbitrary
+  number of arguments.  For example:
+  ~bv[]
+  ACL2 !>:trans1 (progn$ (f1 x) (f2 x) (f3 x))
+   (PROG2$ (F1 X) (PROG2$ (F2 X) (F3 X)))
+  ACL2 !>
+  ~ev[]
+  Thanks to David Rager for contributing this macro.
 
   ~st[HEURISTIC IMPROVEMENTS]
+
+  ACL2 now avoids some repeated attempts to rewrite hypotheses of rewrite
+  rules.  ~l[set-rw-cache-state] for a discussion of this behavior and how to
+  avoid it.  The default behavior has been observed to reduce by 11% the
+  overall time required to complete a regression.  Here are the directories
+  that had the top three time decreases and top three time increases, shown in
+  seconds.
+  ~bv[]
+    -368 coi/gacc (1064 down to 696: decrease of 35%)
+    -220 workshops/1999/ste (664 down to 444: decrease of 33%)
+    -148 unicode (331 down to 183: decrease of 45%)
+    ....
+      +7 workshops/2002/cowles-flat/support (229 up to 236: increase of 3%)
+      +8 workshops/1999/ivy/ivy-v2/ivy-sources (508 up to 516: increase of 2%)
+     +12 workshops/2009/hardin/deque-stobj (78 up to 91: increase of 17%)
+  ~ev[]
 
   The so-called ``ancestors check,'' which is used to limit backchaining, has
   been strengthened so that two calls of ~ilc[equal] are considered the same
@@ -17594,6 +17675,12 @@
 
   (GCL only) The macro ~ilc[mv] has been modified so that certain fixnum boxing
   can be avoided.
+
+  (Allegro CL only) We have set to ~c[nil] four Allegro CL variables that
+  otherwise enable storing of certain source information (for details, see the
+  discussion of ``cross-referencing'' in ACL2 source file ~c[acl2-init.lisp]).
+  As a result of this change we have about a 6% speedup on the regression
+  suite, but a 27% time reduction on an example that includes a lot of books.
 
   ~st[BUG FIXES]
 
@@ -17615,6 +17702,18 @@
   which was a soundness bug that could be exploited to prove ~c[nil].  For a
   such a proof and a bit of further explanation, see the example at the top of
   the comments for ~c[(deflabel note-4-3 ..)] in ACL2 source file ~c[ld.lisp].
+
+  It had been possible to prove ~c[nil] by proving the following
+  theorem using ACL2 built on CCL and then proving its negation using
+  ACL2 built on a different host Lisp.
+  ~bv[]
+  (defthm host-lisp-is-ccl
+    (equal (cdr (assoc 'host-lisp *initial-global-table*))
+           :ccl)
+    :rule-classes nil)
+  ~ev[]
+  This hole has been plugged by moving the setting of ~c['host-lisp] out
+  of the constant ~c[*initial-global-table*].
 
   Fixed ~ilc[trace$] for arguments that are ~il[stobj] accessors or updaters.
   It also gives an informative error in this case when the accessor or updater
@@ -17697,12 +17796,40 @@
   Fixed a bug in an error message that was printed when an unexpected
   expression has occurred where a ~ilc[declare] form is expected.
 
+  (Since all functions are compiled when the host Lisp is CCL or SBCL, the
+  following bug fix did not occur for those host Lisps.)  After evaluation of
+  ~c[(]~ilc[set-compile-fns]~c[ t)], all defined functions are expected to run
+  with compiled code; but this was not the case for functions exported from an
+  ~ilc[encapsulate] event.  This has been fixed.
+
+  It had been the case that the ~c[:]~ilc[puff] command was broken for
+  ~ilc[include-book] form whose book had been certified in a world with an
+  ~ilc[add-include-book-dir] event.  This has been fixed.
+
+  Evaluation of ~il[stobj] updaters (~pl[defstobj]) may no longer use
+  attachments (~pl[defattach]).  This is a subtle point that will likely not
+  affect many users.  Thanks to Jared Davis for bringing this issue to our
+  attention; a slight variant of his example appears in a comment in ACL2
+  source function ~c[oneify-cltl-code].
+
   ~st[CHANGES AT THE SYSTEM LEVEL AND TO DISTRIBUTED BOOKS]
+
+  ACL2 can once again be built on LispWorks (i.e., as the host Lisp), at least
+  with LispWorks 6.0.  Thanks to David Rager for useful conversations.
+  Several changes have been made from previous LispWorks-based ACL2
+  executables:~nl[]
+  o ACL2 now starts up in its read-eval-print loop.~nl[]
+  o You can save an image with ~ilc[save-exec].~nl[]
+  o Multiprocessing is not enabled.~nl[]
+  o The stack size is managed using a LispWorks variable that causes the stack
+  to grow as needed.
 
   The HTML documentation no longer has extra newlines in <pre> environments.
 
   Among the new books is an illustration of ~ilc[defattach],
-  ~c[books/misc/defattach-example.lisp].
+  ~c[books/misc/defattach-example.lisp], as well as a variant of defattach that
+  avoids the need for ~il[guard] verification,
+  ~c[books/misc/defattach-bang.lisp].
 
   Distributed book ~c[books/misc/trace1.lisp] has been deleted.  It had
   provided slightly more friendly ~il[trace] output for new users, but 
@@ -17715,9 +17842,25 @@
 
   (SBCL only) More warnings are suppressed when the host Lisp is SBCL.
 
+  Fixed the build process to pay attention to environment variable
+  ~c[ACL2_SYSTEM_BOOKS] (which may be supplied as a command-line argument to
+  `~c[make]').  An ACL2 executable can thus now be built even when there is no
+  ~c[books/] subdirectory if a suitable replacement directory is supplied.
+
   ~st[EMACS SUPPORT]
 
+  The distributed Emacs file ~c[emacs/emacs-acl2.el] now indents calls of
+  ~c[er@par] and ~c[warning$@par] the same way that calls of ~c[defun] are
+  indented.
+
   ~st[EXPERIMENTAL VERSIONS]
+
+  The parallel version (~pl[parallelism]) now supports parallel evaluation of
+  the ``waterfall'' part of the ACL2 prover; ~pl[set-waterfall-parallelism].
+  Thanks to David Rager for doing the primary design and implementation work.
+
+  A new macro, ~ilc[spec-mv-let], supports speculative and parallel execution
+  in the parallel version, courtesy of David Rager.
 
   Among the enchancements for the HONS version (~pl[hons-and-memoization]) are
   the following.
@@ -17740,6 +17883,9 @@
   that have not had their guards verified.  ~l[memoize] (keyword
   ~c[:ideal-okp]) and ~pl[acl2-defaults-table] (key ~c[:memoize-ideal-okp]) for
   and explanation of this restriction and how to avoid it.
+
+  ~il[History] commands such as ~c[:]~ilc[pe] and ~c[:]~ilc[pbt] now display
+  ``~c[M]'' or ``~c[m]'' to indicate memoized functions.  ~l[pc].
   ~eq[]
 
   ~/~/")
@@ -18560,71 +18706,88 @@
 ; the command with relative command number i, that command got puffed up,
 ; and the new commands have the numbers i through j, inclusive.
 
-  (let ((wrld (w state))
-        (ctx 'puff))
-    (er-let* ((cmd-wrld (er-decode-cd cd wrld :puff state))) 
-             (cond ((<= (access-command-tuple-number (cddar cmd-wrld))
-                        (access command-number-baseline-info
-                                (global-val 'command-number-baseline-info wrld)
-                                :current))
+  (state-global-let*
+   ((modifying-include-book-dir-alist
+
+; The Essay on Include-book-dir-alist explains that the above state global must
+; be t in order to set the acl2-defaults-table.  The idea is to enforce the
+; rule that the acl2-defaults-table is used for the include-book-dir-alist when
+; in the ACL2 loop, but state global 'raw-include-book-dir-alist is used
+; instead when in raw Lisp (see for example add-include-book-dir-fn).  Here, we
+; are presumably evaluating puff or puff* in the loop rather than inside
+; include-book, since these are not embedded event forms.  So we need not worry
+; about puff being evaluated inside an event inside a book.  (Note that
+; make-event is not legal inside a book except with a check-expansion argument
+; that is used as the expansion -- re-expansion does not take place.)  Now,
+; with raw mode one can in principle call all sorts of ACL2 system functions in
+; raw Lisp that we never intended to be called there -- but that requires a
+; trust tag, so it's not our problem!
+
+     t))
+   (let ((wrld (w state))
+         (ctx 'puff))
+     (er-let* ((cmd-wrld (er-decode-cd cd wrld :puff state))) 
+       (cond ((<= (access-command-tuple-number (cddar cmd-wrld))
+                  (access command-number-baseline-info
+                          (global-val 'command-number-baseline-info wrld)
+                          :current))
 
 ; See the similar comment in ubt-ubu-fn.
 
-                    (cond
-                     ((<= (access-command-tuple-number (cddar cmd-wrld))
-                          (access command-number-baseline-info
-                                  (global-val 'command-number-baseline-info wrld)
-                                  :original))
-                      (er soft :puff
-                          "Can't puff a command within the system ~
-                           initialization."))
-                     (t
-                      (er soft :puff
-                          "Can't puff a command within prehistory.  See :DOC ~
-                           reset-prehistory."))))
-                   (t
-                    (er-let*
-                     ((cmds (puffed-command-sequence cd :puff wrld state)))
-                     (let* ((pred-wrld (scan-to-command (cdr cmd-wrld)))
-                            (i (absolute-to-relative-command-number
-                                (max-absolute-command-number cmd-wrld)
-                                (w state)))
-                            (k (- (absolute-to-relative-command-number
-                                   (max-absolute-command-number (w state))
-                                   (w state))
-                                  i)))
-                       (pprogn
-                        (set-w 'retraction pred-wrld state)
-                        (er-let*
-                         ((defpkg-items
-                            (defpkg-items
-                              (global-val 'known-package-alist cmd-wrld)
-                              ctx pred-wrld state)))
-                         (er-progn
-                          (state-global-let*
-                           ((guard-checking-on nil)) ; agree with include-book
-                           (ld (append (let ((kpa (global-val
-                                                   'known-package-alist
-                                                   pred-wrld)))
-                                         (new-defpkg-list defpkg-items kpa kpa))
-                                       cmds)
-                               :ld-skip-proofsp 'include-book-with-locals
-                               :ld-keyword-aliases nil
-                               :ld-verbose nil
-                               :ld-prompt nil
-                               :ld-pre-eval-filter :all
-                               :ld-pre-eval-print :never
-                               :ld-post-eval-print nil
-                               :ld-error-triples t
-                               :ld-error-action :error
-                               :ld-query-control-alist
-                               (cons '(:redef :y)
-                                     (ld-query-control-alist state))))
-                          (value (cons i
-                                       (- (absolute-to-relative-command-number
-                                           (max-absolute-command-number (w state))
-                                           (w state))
-                                          k)))))))))))))
+              (cond
+               ((<= (access-command-tuple-number (cddar cmd-wrld))
+                    (access command-number-baseline-info
+                            (global-val 'command-number-baseline-info wrld)
+                            :original))
+                (er soft :puff
+                    "Can't puff a command within the system initialization."))
+               (t
+                (er soft :puff
+                    "Can't puff a command within prehistory.  See :DOC ~
+                     reset-prehistory."))))
+             (t
+              (er-let*
+                  ((cmds (puffed-command-sequence cd :puff wrld state)))
+                (let* ((pred-wrld (scan-to-command (cdr cmd-wrld)))
+                       (i (absolute-to-relative-command-number
+                           (max-absolute-command-number cmd-wrld)
+                           (w state)))
+                       (k (- (absolute-to-relative-command-number
+                              (max-absolute-command-number (w state))
+                              (w state))
+                             i)))
+                  (pprogn
+                   (set-w 'retraction pred-wrld state)
+                   (er-let*
+                       ((defpkg-items
+                          (defpkg-items
+                            (global-val 'known-package-alist cmd-wrld)
+                            ctx pred-wrld state)))
+                     (er-progn
+                      (state-global-let*
+                       ((guard-checking-on nil)) ; agree with include-book
+                       (ld (append (let ((kpa (global-val
+                                               'known-package-alist
+                                               pred-wrld)))
+                                     (new-defpkg-list defpkg-items kpa kpa))
+                                   cmds)
+                           :ld-skip-proofsp 'include-book-with-locals
+                           :ld-keyword-aliases nil
+                           :ld-verbose nil
+                           :ld-prompt nil
+                           :ld-pre-eval-filter :all
+                           :ld-pre-eval-print :never
+                           :ld-post-eval-print nil
+                           :ld-error-triples t
+                           :ld-error-action :error
+                           :ld-query-control-alist
+                           (cons '(:redef :y)
+                                 (ld-query-control-alist state))))
+                      (value (cons i
+                                   (- (absolute-to-relative-command-number
+                                       (max-absolute-command-number (w state))
+                                       (w state))
+                                      k))))))))))))))
 
 (defun puff-report (caller new-cd1 new-cd2 cd state)
   (cond ((eql new-cd1 (1+ new-cd2))
@@ -19194,12 +19357,12 @@
 
 ; This defthm has two forcing rounds and is very realistic.
 
-      (defthm ordered-symbol-alistp-remove-first-pair-test
+      (defthm ordered-symbol-alistp-delete-assoc-eq-test
         (implies (and (ordered-symbol-alistp l)
                       (symbolp key)
                       (assoc-eq key l))
-                 (ordered-symbol-alistp (remove-first-pair key l)))
-        :hints (("Goal" :in-theory (disable ordered-symbol-alistp-remove-first-pair))))
+                 (ordered-symbol-alistp (delete-assoc-eq key l)))
+        :hints (("Goal" :in-theory (disable ordered-symbol-alistp-delete-assoc-eq))))
 
       )
     :ld-skip-proofsp nil
@@ -20841,12 +21004,13 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
 
   It can be built in any of the following Common Lisps:
   ~bf[]
-    * ~b[Allegro],
-    * ~b[GCL] (Gnu Common Lisp),
+    * ~b[Allegro Common Lisp],
+    * ~b[CCL] (formerly OpenMCL)
     * ~b[CLISP],
     * ~b[CMU Common Lisp],
-    * ~b[SBCL], and
-    * ~b[CCL] (OpenMCL)
+    * ~b[GCL] (Gnu Common Lisp),
+    * ~b[LispWorks], and
+    * ~b[SBCL] (Steel Bank Common Lisp)
   ~ef[]
 
   ~fly[|The End of the Flying Tour|]") 
@@ -23042,7 +23206,7 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
 ; object cannot arise in an execution on behalf of an evaluation of a
 ; subexpression in a theorem or proof.
 
-  (let ((ev-fncall-val `(ev-fncall-null-body-er mfc-ts ,term mfc state)))
+  (let ((ev-fncall-val `(ev-fncall-null-body-er nil mfc-ts ,term mfc state)))
     (cond
      ((not (live-state-p state))
 
@@ -23119,8 +23283,9 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
 
 (defun-one-output mfc-rw-raw (term alist obj equiv-info mfc fn state)
   (declare (xargs :guard (state-p state)))
-  (let ((ev-fncall-val `(ev-fncall-null-body-er mfc-rw-raw ,term ,alist ',obj
-                                                ,equiv-info mfc ,fn state)))
+  (let ((ev-fncall-val `(ev-fncall-null-body-er nil mfc-rw-raw ,term ,alist
+                                                ',obj ,equiv-info mfc ,fn
+                                                state)))
     (cond
      ((not (live-state-p state))
       (throw-raw-ev-fncall ev-fncall-val))
@@ -23204,7 +23369,7 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
 ; to reconsider this.
 
   (declare (xargs :guard (state-p state)))
-  (let ((ev-fncall-val `(ev-fncall-null-body-er mfc-relieve-hyp ,hyp ,alist
+  (let ((ev-fncall-val `(ev-fncall-null-body-er nil mfc-relieve-hyp ,hyp ,alist
                                                 ,rune ,target ,bkptr mfc
                                                 state)))
     (cond
@@ -23304,7 +23469,7 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
 
 (defun-one-output mfc-ap-raw (term mfc state)
   (declare (xargs :guard (state-p state)))
-  (let ((ev-fncall-val `(ev-fncall-null-body-er mfc-ap ,term mfc state)))
+  (let ((ev-fncall-val `(ev-fncall-null-body-er nil mfc-ap ,term mfc state)))
     (cond
      ((not (live-state-p state))
       (throw-raw-ev-fncall ev-fncall-val))
@@ -23877,6 +24042,10 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
 
   #-acl2-loop-only
   (progn
+
+; Parallelism wart: It may be a good idea to reset the parallelism variables
+; in all #+acl2-par compilations before saving the image.
+
     (if (not (eql *ld-level* 0))
         (er hard 'save-exec
             "Please type :q to exit the ACL2 read-eval-print loop and then try ~
@@ -23894,13 +24063,9 @@ href=\"mailto:acl2-bugs@utlists.utexas.edu\">acl2-bugs@utlists.utexas.edu</a></c
              (cond ((null extra-startup-string)
                     "This ACL2 executable was created by saving a session.")
                    (t extra-startup-string)))))
-    #-(or gcl cmu sbcl allegro clisp ccl)
+    #-(or gcl cmu sbcl allegro clisp ccl lispworks)
     (er hard 'save-exec
-        "Sorry, but save-exec is not implemented for this Common Lisp.~a0"
-        #+lispworks "  If you care to investigate, see the comment in ~
-                     acl2-init.lisp starting with: ``The definition of ~
-                     save-exec-raw for lispworks (below) did not work.''"
-        #-lispworks "")
+        "Sorry, but save-exec is not implemented for this Common Lisp.")
 
 ; The forms just below, before the call of save-exec-raw, are there so that the
 ; initial (lp) will set the :cbd correctly.

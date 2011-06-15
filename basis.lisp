@@ -760,6 +760,18 @@
                    (put-assoc-equal ,qname ,val *wormhole-status-alist*)))
          nil))))
 
+#+(and acl2-par (not acl2-loop-only))
+(deflock *wormhole-lock*)
+
+#+(and acl2-par (not acl2-loop-only))
+(defmacro with-wormhole-lock (&rest args)
+  `(with-lock *wormhole-lock*
+              ,@args))
+
+#-(and acl2-par (not acl2-loop-only))
+(defmacro with-wormhole-lock (&rest args)
+  `(progn$ ,@args))
+
 (defmacro wormhole (name entry-lambda input form
                          &key
                          (current-package 'same current-packagep)
@@ -1216,53 +1228,54 @@
   ~pl[cw], in particular the discussion at the end of that documentation
   topic.~/"
 
-  `(prog2$
-    (wormhole-eval ,name ,entry-lambda nil)
-    (wormhole1
-     ,name
-     ,input
-     ,form
-     (list
-      ,@(append
-         (if current-packagep
-             (list `(cons 'current-package ,current-package))
-             nil)
-         (if ld-skip-proofspp
-             (list `(cons 'ld-skip-proofsp ,ld-skip-proofsp))
-             nil)
-         (if ld-redefinition-actionp
-             (list `(cons 'ld-redefinition-action
-                          ,ld-redefinition-action))
-             nil)
-         (list `(cons 'ld-prompt ,ld-prompt))
-         (if ld-keyword-aliasesp
-             (list `(cons 'ld-keyword-aliases
-                          ,ld-keyword-aliases))
-             nil)
-         (if ld-pre-eval-filterp
-             (list `(cons 'ld-pre-eval-filter ,ld-pre-eval-filter))
-             nil)
-         (if ld-pre-eval-printp
-             (list `(cons 'ld-pre-eval-print ,ld-pre-eval-print))
-             nil)
-         (if ld-post-eval-printp
-             (list `(cons 'ld-post-eval-print ,ld-post-eval-print))
-             nil)
-         (if ld-evisc-tuplep
-             (list `(cons 'ld-evisc-tuple ,ld-evisc-tuple))
-             nil)
-         (if ld-error-triplesp
-             (list `(cons 'ld-error-triples ,ld-error-triples))
-             nil)
-         (if ld-error-actionp
-             (list `(cons 'ld-error-action ,ld-error-action))
-             nil)
-         (if ld-query-control-alistp
-             (list `(cons 'ld-query-control-alist ,ld-query-control-alist))
-             nil)
-         (if ld-verbosep
-             (list `(cons 'ld-verbose ,ld-verbose))
-             nil))))))
+  `(with-wormhole-lock
+    (prog2$
+     (wormhole-eval ,name ,entry-lambda nil)
+     (wormhole1
+      ,name
+      ,input
+      ,form
+      (list
+       ,@(append
+          (if current-packagep
+              (list `(cons 'current-package ,current-package))
+            nil)
+          (if ld-skip-proofspp
+              (list `(cons 'ld-skip-proofsp ,ld-skip-proofsp))
+            nil)
+          (if ld-redefinition-actionp
+              (list `(cons 'ld-redefinition-action
+                           ,ld-redefinition-action))
+            nil)
+          (list `(cons 'ld-prompt ,ld-prompt))
+          (if ld-keyword-aliasesp
+              (list `(cons 'ld-keyword-aliases
+                           ,ld-keyword-aliases))
+            nil)
+          (if ld-pre-eval-filterp
+              (list `(cons 'ld-pre-eval-filter ,ld-pre-eval-filter))
+            nil)
+          (if ld-pre-eval-printp
+              (list `(cons 'ld-pre-eval-print ,ld-pre-eval-print))
+            nil)
+          (if ld-post-eval-printp
+              (list `(cons 'ld-post-eval-print ,ld-post-eval-print))
+            nil)
+          (if ld-evisc-tuplep
+              (list `(cons 'ld-evisc-tuple ,ld-evisc-tuple))
+            nil)
+          (if ld-error-triplesp
+              (list `(cons 'ld-error-triples ,ld-error-triples))
+            nil)
+          (if ld-error-actionp
+              (list `(cons 'ld-error-action ,ld-error-action))
+            nil)
+          (if ld-query-control-alistp
+              (list `(cons 'ld-query-control-alist ,ld-query-control-alist))
+            nil)
+          (if ld-verbosep
+              (list `(cons 'ld-verbose ,ld-verbose))
+            nil)))))))
 
 (deflabel wormhole-implementation
   :doc
@@ -3407,8 +3420,11 @@
             (mv result state))))
 
 (defun world-evisceration-alist (state alist)
-  (cons (cons (w state) *evisceration-world-mark*)
-        alist))
+  (let ((wrld (w state)))
+    (cond ((null wrld) ; loading during the build
+           alist)
+          (t (cons (cons wrld *evisceration-world-mark*)
+                   alist)))))
 
 (defun stobj-print-name (name)
   (coerce
@@ -3443,6 +3459,9 @@
 
 (defconst *error-triple-sig*
   '(nil nil state))
+
+(defconst *cmp-sig*
+  '(nil nil))
 
 (defun evisceration-stobj-marks (stobjs-flags inputp)
   (cond ((equal stobjs-flags *error-triple-sig*)
@@ -4474,17 +4493,24 @@
 
   ":Doc-Section IO
 
-  set the hard right margin for formatted output~/
+  set the right margin for formatted output~/
 
-  ~ilc[Fmt] and related functions insert linebreaks when lines get too long.
-  A linebreaks is inserted at an aesthetically appropriate points once the
-  column exceeds the value of ~il[state] global ~c[fmt-soft-right-margin],
-  i.e., the result of evaluating ~c[(@ fmt-soft-right-margin)].  If however the
-  column exceeds the value of ~il[state] global ~c[fmt-hard-right-margin],
-  i.e., the result of evaluating ~c[(@ fmt-hard-right-margin)], then a
-  linebreak is soon inserted.  Such a ``hard'' linebreak follows the insertion
-  of a backslash (~c[\\]) character unless ~ilc[fmt!], ~ilc[fms!], or
-  ~ilc[fmt1!] is used, or state global ~c[write-for-read] is true.~/~/"
+  In this documentation topic we discuss setting of both a ``soft'' and a
+  ``hard'' right margin.
+
+  ~bv[]
+  Example Forms:
+  (set-fmt-soft-right-margin 55 state) ; set soft right margin to 55
+  (set-fmt-hard-right-margin 68 state) ; set hard right margin to 68
+  ~ev[]
+
+  ~ilc[Fmt] and related functions insert linebreaks when lines get too long.  A
+  linebreak is inserted at an aesthetically appropriate point once the column
+  exceeds the value of ~c[(@ fmt-soft-right-margin)].  If however the column
+  exceeds the value of ~c[(@ fmt-hard-right-margin)], then a linebreak is soon
+  inserted.  Such a ``hard'' linebreak follows the insertion of a
+  backslash (~c[\\]) character unless ~ilc[fmt!], ~ilc[fms!], or ~ilc[fmt1!] is
+  used, or state global ~c[write-for-read] is true.~/~/"
 
   (cond
    ((and (integerp n)
@@ -6187,17 +6213,15 @@
   notation in certain environments.  Infix printing is not currently supported
   but may be if there is sufficient need for it.~/
 
-  ACL2's formatting functions print to the indicated channel, keeping
-  track of which column they are in.  ~ilc[Fmt1] can be used if the caller
-  knows which column the channel is in (i.e., how many ~il[characters] have
-  been printed since the last newline).  Otherwise, ~c[fmt] or ~ilc[fms] must be
-  used, both of which output a newline so as to establish the column
-  position at ~c[0].  Unlike Common Lisp's ~c[format] routine, ~c[fmt] and its
-  relatives break the output into lines so as to try to avoid printing
-  past column ~c[77].  That number is built-into the definitions of ACL2's
-  formatting functions.  Line breaks are automatically inserted as
-  necessary in place of spaces and after hyphens in the text being
-  printed.
+  ACL2's formatting functions print to the indicated channel, keeping track of
+  which column they are in.  ~ilc[Fmt1] can be used if the caller knows which
+  column the channel is in (i.e., how many ~il[characters] have been printed
+  since the last newline).  Otherwise, ~c[fmt] or ~ilc[fms] must be used, both
+  of which output a newline so as to establish the column position at ~c[0].
+  Unlike Common Lisp's ~c[format] routine, ~c[fmt] and its relatives break the
+  output into lines so that, by default, an attempt is made to avoid printing
+  past column ~c[77].  ~l[set-fmt-hard-right-margin] for a discussion of how
+  linebreaks are inserted and how to change the relevant default settings.
 
   The formatting functions scan the string from left to right,
   printing each successive character unless it is a tilde ~c[(~~)].  Upon
@@ -6770,6 +6794,8 @@
 
 ; See error-fms-channel.  Here we also print extra newlines.
 
+; Keep in sync with error-fms-cw.
+
   (let ((chan (f-get-global 'standard-co state)))
     (pprogn (newline chan state)
             (error-fms-channel hardp ctx str alist chan state)
@@ -6801,9 +6827,9 @@
 ; Starting after Version_4.1, we use the ACL2 oracle to explain warning frames.
 ; Previously we kept these frames with a state global variable,
 ; 'accumulated-warnings, rather than in the raw lisp variable,
-; *accumulated-warnings*.  But then we introduced warning$-cmp to support the
+; *accumulated-warnings*.  But then we introduced warning$-cw1 to support the
 ; definitions of translate1-cmp and translate-cmp, which do not modify the ACL2
-; state.  Since warning$-cmp uses a wormhole, the warning frames based on a
+; state.  Since warning$-cw1 uses a wormhole, the warning frames based on a
 ; state global variable were unavailable when printing warning summaries.
 
   #+acl2-loop-only
@@ -6893,6 +6919,8 @@
 ; The user who uses that variable in his forms is likely to be
 ; disappointed by the fact that we rebind it.
 
+; Keep in sync with er-let*@par.
+
   (declare (xargs :guard (and (doubleton-list-p alist)
                               (symbol-alistp alist))))
   (cond ((null alist)
@@ -6911,6 +6939,32 @@
                                    (caar alist)
                                    'state))
                        (list t (list 'er-let* (cdr alist) body)))))))
+
+#+acl2-par
+(defmacro er-let*@par (alist body)
+
+; Keep in sync with er-let*.
+
+; This macro introduces the variable er-let-star-use-nowhere-else.
+; The user who uses that variable in his forms is likely to be
+; disappointed by the fact that we rebind it.
+
+  (declare (xargs :guard (and (doubleton-list-p alist)
+                              (symbol-alistp alist))))
+  (cond ((null alist)
+         (list 'check-vars-not-free
+               '(er-let-star-use-nowhere-else)
+               body))
+        (t (list 'mv-let
+                 (list 'er-let-star-use-nowhere-else
+                       (caar alist))
+                 (cadar alist)
+                 (list 'cond
+                       (list 'er-let-star-use-nowhere-else
+                             (list 'mv
+                                   'er-let-star-use-nowhere-else
+                                   (caar alist)))
+                       (list t (list 'er-let*@par (cdr alist) body)))))))
 
 (defmacro match (x pat)
   (list 'case-match x (list pat t)))
@@ -7851,6 +7905,8 @@
 ; The values in :default-bindings are evaluated, so it would be equivalent to
 ; replace 0 with (- 4 4), for example.
 
+; Keep argument list in sync with io?@par.
+
   (declare (xargs :guard (and (symbolp token)
                               (symbol-listp vars)
                               (no-duplicatesp vars)
@@ -7953,6 +8009,20 @@
                 (t state))
           ,expansion)))))
 
+#+acl2-par
+(defmacro io?@par (token commentp &rest rst)
+
+; This macro is the same as io?, except that it provides the extra property
+; that the commentp flag is overridden to use comment-window printing.
+
+; Keep the argument list in sync with io?.
+
+; Parallelism wart: surround the io? call below with a suitable lock.  Once
+; this is done, remove any redundant locks around io?@par calls.
+
+  (declare (ignore commentp))
+  `(io? ,token t ,@rst))
+
 (defmacro gag-mode ()
 
   ":Doc-Section Miscellaneous
@@ -7968,6 +8038,9 @@
   '(f-get-global 'gag-mode state))
 
 (defmacro io?-prove (vars body &rest keyword-args)
+
+; Keep in sync with io?-prove-cw.
+
   `(io? prove nil state ,vars
         (if (gag-mode) state ,body)
         ,@keyword-args))
@@ -7984,7 +8057,7 @@
 
 (defun error1 (ctx str alist state)
 
-; Warning: Keep this in sync with error1-safe.
+; Warning: Keep this in sync with error1-safe and error1@par.
 
   ":Doc-Section ACL2::Programming
 
@@ -8021,6 +8094,18 @@
    (io? error nil state (alist str ctx)
         (error-fms nil ctx str alist state))
    (mv t nil state)))
+
+#+acl2-par
+(defun error1@par (ctx str alist state)
+
+; Keep in sync with error1.  We accept state so that calls to error1 and
+; error1@par look the same.
+
+  (declare (ignore state))
+  (prog2$
+   (io? error t state (alist str ctx)
+        (error-fms nil ctx str alist state))
+   (mv@par t nil state)))
 
 (defun error1-safe (ctx str alist state)
 
@@ -8081,7 +8166,6 @@
 
 (defmacro default-state-vars
   (state-p &key
-           (hons-enabled 'nil hons-enabled-p)
            (safe-mode 'nil safe-mode-p)
            (temp-touchable-vars 'nil temp-touchable-vars-p)
            (guard-checking-on 't guard-checking-on-p)
@@ -8089,19 +8173,17 @@
            (temp-touchable-fns 'nil temp-touchable-fns-p)
            (parallel-evaluation-enabled 'nil parallel-evaluation-enabled-p))
 
-; Warning: Keep this in sync with state-vars.
+; Warning: Keep this in sync with defrec state-vars.
 
-; State-p is true when by default, we want to use the values of the relevant
-; state globals.  Otherwise we use the specified defaults, which are supplied
-; above for convenience but can be changed there (i.e., in this code) if better
-; default values are found.
+; State-p is t to indicate that we use the current values of the relevant state
+; globals.  Otherwise we use the specified defaults, which are supplied above
+; for convenience but can be changed there (i.e., in this code) if better
+; default values are found.  The value :hons for state-p is treated like nil,
+; except that state-var hons-enabled is t rather than nil.
 
-  (cond (state-p
+  (cond ((eq state-p t)
          `(make state-vars
-                :hons-enabled
-                ,(if hons-enabled-p
-                     hons-enabled
-                   '(f-get-global 'hons-enabled state))
+                :hons-enabled (hons-enabledp state)
                 :safe-mode
                 ,(if safe-mode-p
                      safe-mode
@@ -8126,9 +8208,9 @@
                 ,(if parallel-evaluation-enabled-p
                      parallel-evaluation-enabled
                    '(f-get-global 'parallel-evaluation-enabled state))))
-        (t
+        (t ; state-p is not t
          `(make state-vars
-                :hons-enabled ,hons-enabled
+                :hons-enabled ,(eq state-p :hons)
                 :safe-mode ,safe-mode
                 :temp-touchable-vars ,temp-touchable-vars
                 :guard-checking-on ,guard-checking-on

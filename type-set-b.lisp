@@ -1522,8 +1522,8 @@
                                       :index-of-last-enabling))
                           0 nil nil w nil))
 
-(defun maybe-warn-about-theory (ens1 force-xnume-en1 imm-xnume-en1 ens2
-                                     ctx wrld state)
+(defun@par maybe-warn-about-theory (ens1 force-xnume-en1 imm-xnume-en1 ens2
+                                         ctx wrld state)
 
 ; Ens1 is the enabled structure before an in-theory event or hint, and ens2 is
 ; the resulting enabled structure.  It is a bit unfortunate that warning-off-p
@@ -1536,44 +1536,43 @@
 
   (cond
    ((warning-disabled-p "Disable")
-    state)
-   (t (pprogn
-       (let ((fns (theory-warning-fns ens1 ens2 wrld)))
+    (state-mac@par))
+   (t (pprogn@par
+       (let ((fns (theory-warning-fns ens1 ens2 wrld)))            
          (if fns
-             (warning$ ctx ("Disable")
-                       "The following 0-ary function~#0~[~/s~] will now have ~
-                        ~#0~[its :definition rune~/their :definition runes~] ~
-                        disabled but ~#0~[its :executable-counterpart ~
-                        rune~/their :executable-counterpart runes~] enabled, ~
-                        which will allow ~#0~[its definition~/their ~
-                        definitions~] to open up after all:  ~&0.~|See :DOC ~
-                        theories."
-                       fns)
-           state))
+             (warning$@par ctx ("Disable")
+               "The following 0-ary function~#0~[~/s~] will now have ~#0~[its ~
+                :definition rune~/their :definition runes~] disabled but ~
+                ~#0~[its :executable-counterpart rune~/their ~
+                :executable-counterpart runes~] enabled, which will allow ~
+                ~#0~[its definition~/their definitions~] to open up after ~
+                all:  ~&0.~|See :DOC theories."
+               fns)
+           (state-mac@par)))
        (cond
         ((and force-xnume-en1
               (not (enabled-numep *force-xnume* ens2)))
-         (warning$ ctx ("Disable")
-                   "Forcing has transitioned from enabled to disabled.~|~
-                    See :DOC force."))
+         (warning$@par ctx ("Disable")
+           "Forcing has transitioned from enabled to disabled.~|See :DOC ~
+            force."))
         ((and (not force-xnume-en1)
               (enabled-numep *force-xnume* ens2))
-         (warning$ ctx ("Disable")
-                   "Forcing has transitioned from disabled to enabled.~|~
-                    See :DOC force."))
-        (t state))
+         (warning$@par ctx ("Disable")
+           "Forcing has transitioned from disabled to enabled.~|See :DOC ~
+            force."))
+        (t (state-mac@par)))
        (cond
         ((and imm-xnume-en1
               (not (enabled-numep *immediate-force-modep-xnume* ens2)))
-         (warning$ ctx ("Disable")
-                   "IMMEDIATE-FORCE-MODEP has transitioned from enabled to ~
-                    disabled.~|See :DOC force."))
+         (warning$@par ctx ("Disable")
+           "IMMEDIATE-FORCE-MODEP has transitioned from enabled to ~
+            disabled.~|See :DOC force."))
         ((and (not imm-xnume-en1)
               (enabled-numep *immediate-force-modep-xnume* ens2))
-         (warning$ ctx ("Disable")
-                   "IMMEDIATE-FORCE-MODEP has transitioned from disabled to ~
-                    enabled.~|See :DOC immediate-force-modep."))
-        (t state))))))
+         (warning$@par ctx ("Disable")
+           "IMMEDIATE-FORCE-MODEP has transitioned from disabled to ~
+            enabled.~|See :DOC immediate-force-modep."))
+        (t (state-mac@par)))))))
 
 ; And now we develop the code for loading a theory into an enabled
 ; structure.
@@ -1582,7 +1581,8 @@
   (tterm error . untrans-term)
   t)
 
-(defun chk-theory-invariant1 (theory-expr ens invariant-alist errp-acc ctx state)
+(defun@par chk-theory-invariant1 (theory-expr ens invariant-alist errp-acc ctx
+                                              state)
 
 ; We check a theory represented in enabled structure ens against the theory
 ; invariants in invariant-alist.  If theory-expr is :from-hint then this theory
@@ -1592,7 +1592,7 @@
 
   (cond
    ((null invariant-alist)
-    (mv errp-acc nil state))
+    (mv@par errp-acc nil state))
    (t (let* ((table-entry (car invariant-alist))
              (inv-name (car table-entry))
              (inv-rec (cdr table-entry))
@@ -1618,26 +1618,28 @@
                                   "the current event")
                                  (t (msg "~x0" theory-expr)))
                            (term-evisc-tuple nil state)
-                           (access theory-invariant-record inv-rec :untrans-term)
+                           (access theory-invariant-record inv-rec
+                                   :untrans-term)
                            okp
                            (if (access theory-invariant-record inv-rec :error)
                                "~|This theory invariant violation causes an ~
                                 error."
                              ""))))
-                 (mv-let
+                 (mv-let@par
                   (errp-acc state)
                   (cond
                    ((access theory-invariant-record inv-rec :error)
-                    (mv-let (erp val state)
-                            (er soft ctx "~@0" msg)
-                            (declare (ignore erp val))
-                            (mv t state)))
-                   (t (pprogn (warning$ ctx "Theory" "~@0" msg)
-                              (mv errp-acc state))))
-                  (chk-theory-invariant1 theory-expr ens (cdr invariant-alist)
-                                         errp-acc ctx state))))
-          (okp (chk-theory-invariant1 theory-expr ens (cdr invariant-alist)
-                                      errp-acc ctx state))
+                    (mv-let@par (erp val state)
+                                (er@par soft ctx "~@0" msg)
+                                (declare (ignore erp val)) 
+                                (mv@par t state)))
+                   (t (pprogn@par (warning$@par ctx "Theory" "~@0" msg)
+                                  (mv@par errp-acc state))))
+                  (chk-theory-invariant1@par theory-expr ens
+                                             (cdr invariant-alist)
+                                             errp-acc ctx state))))
+          (okp (chk-theory-invariant1@par theory-expr ens (cdr invariant-alist)
+                                          errp-acc ctx state))
           (t (let ((msg (msg
                          "Theory invariant ~x0 failed on the theory produced ~
                           by ~@1.  Theory invariant ~x0 is ~P32.~@4"
@@ -1653,29 +1655,30 @@
                              "~|This theory invariant violation causes an ~
                                error."
                            ""))))
-               (mv-let
+               (mv-let@par
                 (errp-acc state)
                 (cond
                  ((access theory-invariant-record inv-rec :error)
-                  (mv-let (erp val state)
-                          (er soft ctx "~@0" msg)
-                          (declare (ignore erp val))
-                          (mv t state)))
-                 (t (pprogn (warning$ ctx "Theory" "~@0" msg)
-                            (mv errp-acc state))))
-                (chk-theory-invariant1 theory-expr ens (cdr invariant-alist)
-                                       errp-acc ctx state))))))))))
+                  (mv-let@par (erp val state)
+                              (er@par soft ctx "~@0" msg)
+                              (declare (ignore erp val))
+                              (mv@par t state)))
+                 (t (pprogn@par (warning$@par ctx "Theory" "~@0" msg)
+                                (mv@par errp-acc state))))
+                (chk-theory-invariant1@par theory-expr ens
+                                           (cdr invariant-alist)
+                                           errp-acc ctx state))))))))))
 
-(defun chk-theory-invariant (theory-expr ens ctx state)
+(defun@par chk-theory-invariant (theory-expr ens ctx state)
 
 ; See the comment in chk-theory-invariant1.
 
-  (chk-theory-invariant1 theory-expr
-                         ens
-                         (table-alist 'theory-invariant-table (w state))
-                         nil
-                         ctx
-                         state))
+  (chk-theory-invariant1@par theory-expr
+                             ens
+                             (table-alist 'theory-invariant-table (w state))
+                             nil
+                             ctx
+                             state))
 
 ; CLAUSE IDENTIFICATION
 
@@ -1776,7 +1779,7 @@
   (coerce (chars-for-tilde-@-clause-id-phrase id)
           'string))
 
-(defun load-theory-into-enabled-structure
+(defun@par load-theory-into-enabled-structure
   (theory-expr theory augmented-p ens incrmt-array-name-info
                index-of-last-enabling wrld ctx state)
 
@@ -1828,7 +1831,7 @@
                               "ACL2"))
                      (incrmt-array-name-info ; must be a clause-id
                       (intern (coerce
-                               (append root
+                               (append root 
                                        (chars-for-tilde-@-clause-id-phrase
                                         incrmt-array-name-info))
                                'string)
@@ -1852,12 +1855,14 @@
                     :array-length new-d
                     :array-name-root root
                     :array-name-suffix suffix)))
-    (er-progn (if (or (eq theory-expr :no-check)
-                      (eq (ld-skip-proofsp state) 'include-book)
-                      (eq (ld-skip-proofsp state) 'include-book-with-locals))
-                  (value nil)
-                (chk-theory-invariant theory-expr ens ctx state))
-              (value ens))))
+    (er-progn@par (if (or (eq theory-expr :no-check)
+                          (eq (ld-skip-proofsp state)
+                              'include-book)
+                          (eq (ld-skip-proofsp state)
+                              'include-book-with-locals))
+                      (value@par nil)
+                    (chk-theory-invariant@par theory-expr ens ctx state))
+                  (value@par ens))))
 
 ; Here is how we initialize the global enabled structure, from which
 ; all subsequent structures are built.
@@ -1918,6 +1923,14 @@
 
 ; Without the odd guard -- some term mentioning all the formals -- the formals
 ; are recognized as irrelevant!  This body below always returns t.
+
+; Parallelism wart: It's unclear whether we need to lock this array operation.
+; By design, each array and theory is unique to the current subgoal, so this
+; locking should be unnecessary.  However, we've seen some slow array access
+; warnings, and maybe this is where they're generated.
+
+; (with-acl2-lock
+;  *acl2-par-arrays-lock*
 
   (let* ((ges1 (getprop varname 'global-value nil
                         'current-acl2-world wrld))
@@ -3288,7 +3301,7 @@
 ; the tag is a "parent tree" indicating the set of literals of the
 ; current-clause upon which the type deduction depends.  See the Essay
 ; on Parent Trees.  The type-alist in general contains entries of the
-; form (term ts . ttree), where ttree is the tag tree encoding all of
+; form (term ts . ttree), where ttree is the tag-tree encoding all of
 ; the 'PTs upon which depend the assertion that term has type-set ts.
 
 ; Note on Performance:
@@ -3740,7 +3753,7 @@
 ; and otherwise is the unique x such that ((equiv term x) *ts-t* . tt) belongs
 ; to type-alist for some tt.
 
-; Ttree is a tag tree justifying the equality of term to term-canon.
+; Ttree is a tag-tree justifying the equality of term to term-canon.
 
 ; We will use the following easy-to-prove theorem:
 
@@ -5532,7 +5545,7 @@
                 ((ts-subsetp ts1 ts0)
 
 ; This is an optimization.  We are about to intersect the type-sets and union
-; the tag trees.  But if ts1 is a subset of ts0, the intersection is just ts1.
+; the tag-trees.  But if ts1 is a subset of ts0, the intersection is just ts1.
 ; We need not return ttree0 in this case; note that we must always return ttree1.
 
                  (mv ts1 ttree1))
@@ -6191,6 +6204,7 @@
   ~bv[]
   Useful Forms:
   (accumulated-persistence t)              ; Activate statistics gathering.
+  (accumulated-persistence :all)           ; As above, ``enhanced'' (see below)
 
   (show-accumulated-persistence :frames)   ; Display statistics ordered by
   (show-accumulated-persistence :tries)    ; frames built, times tried,
@@ -7439,7 +7453,7 @@
 ; that x and new-term are the same term modulo their respective
 ; parities.
 
-; The tag tree shared-ttree justifies truth or falsity of new-term
+; The tag-tree shared-ttree justifies truth or falsity of new-term
 ; while xttree justifies truth or falsity of x.
 
 ; We assume that new-term is not a call of NOT.
@@ -7591,7 +7605,7 @@
 ; (and some ttrees) and thus encoding the current assumptions.  In a break with
 ; nqthm, the ACL2 type-set function tracks dependencies among the entries on
 ; the type-alist.  In particular, the type-alist here contains pairs of the
-; form (term ts . ttree), where ttree is a tag tree generally containing 'PT
+; form (term ts . ttree), where ttree is a tag-tree generally containing 'PT
 ; tags.  (There may be other tags, e.g., 'LEMMA and maybe even 'FC-DERIVATION
 ; during forward- chaining.)  In nqthm, the type-alist contained pairs of the
 ; form (term . ts).  The ttree argument to type-set is an accumulator onto
@@ -8445,7 +8459,7 @@
                                                      ancestors
                                                      ens w
 
-; We lie here by passing in the nil tag tree, so that we can avoid
+; We lie here by passing in the nil tag-tree, so that we can avoid
 ; contaminating the resulting type-alist with a copy of ttree.  We'll make sure
 ; that ttree gets into the answer returned by type-alist-with-rules, which is
 ; the only function that calls type-set-with-rule.
@@ -9876,7 +9890,7 @@
                                     (shared-ttree
 
 ; We could just use (cons-tag-trees ttree xttree) here, but let's save a cons
-; if we don't need that tag tree.
+; if we don't need that tag-tree.
 
                                      (cond
                                       ((or (not (ts= ts1 int))
@@ -10204,7 +10218,7 @@
 ; explicitly on the type-alist.
 
 ;;;  1> (ASSUME-TRUE-FALSE (< X '0) ; condition assumed true or false
-;;;                        NIL      ; a tag tree
+;;;                        NIL      ; a tag-tree
 ;;;                        NIL      ; force-flg
 ;;;                        NIL      ; never mind this one...
 ;;;                        ((X 31)) ; type-alist: X is rational
@@ -10217,7 +10231,7 @@
 ;;;                                        ; X is negative rational
 ;;;                        ((X 7) (X 31))  ; false-type-alist:
 ;;;                                        ; X is non-negative rational
-;;;                        NIL)>           ; tag tree
+;;;                        NIL)>           ; tag-tree
 
 ; But wait, there's more!  Robert subsequently sent an example showing
 ; that it is not enough to put the current inequality with 0, e.g.,
@@ -11374,13 +11388,13 @@
 
 ; A good performance test is
 
-; (defthm ordered-symbol-alistp-remove-first-pair-test
+; (defthm ordered-symbol-alistp-delete-assoc-eq-test
 ;   (implies (and (ordered-symbol-alistp l)
 ;                 (symbolp key)
 ;                 (assoc-eq key l))
-;            (ordered-symbol-alistp (remove-first-pair key l)))
+;            (ordered-symbol-alistp (delete-assoc-eq key l)))
 ;   :hints (("Goal" :in-theory
-;            (disable ordered-symbol-alistp-remove-first-pair))))
+;            (disable ordered-symbol-alistp-delete-assoc-eq))))
 
 ; The naive approach does this in about 3.4 seconds (prove time, on Rana, a
 ; Sparc 2).  The repetitious approach takes 5.6 seconds.  The reconsidering
@@ -11496,7 +11510,7 @@
 (defun ts-booleanp (term ens wrld)
   (mv-let (ts ttree)
           (type-set term nil nil nil ens wrld nil nil nil)
-          (cond ((tagged-object 'assumption ttree)
+          (cond ((tagged-objectsp 'assumption ttree)
                  (er hard 'ts-booleanp
                      "It was thought impossible for a call of type-set with ~
                       force-flg = nil to produce an 'assumption, but ~
