@@ -1,4 +1,4 @@
-; ACL2 Version 4.2 -- A Computational Logic for Applicative Common Lisp
+; ACL2 Version 4.3 -- A Computational Logic for Applicative Common Lisp
 ; Copyright (C) 2011  University of Texas at Austin
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
@@ -673,7 +673,7 @@ ACL2 from scratch.")
    (setq acl2::*copy-of-acl2-version*
 ;  Keep this in sync with the value of acl2-version in *initial-global-table*.
          (concatenate 'string
-                      "ACL2 Version 4.2"
+                      "ACL2 Version 4.3"
                       #+non-standard-analysis
                       "(r)"
                       #+(and mcl (not ccl))
@@ -881,7 +881,7 @@ ACL2 from scratch.")
                 (invoke-restart 'muffle-warning))))
     ,@forms)
 
-  #+cmucl
+  #+cmu
   `(progn (setq ext:*gc-verbose* nil)
           (handler-bind
            ((warning (lambda (c)
@@ -1165,11 +1165,13 @@ which is saved just in case it's needed later.")
 
 ; Jared patch: add #Z and #z for Serialized Objects (see serialize-raw.lisp)
 
+    #+hons ; SBCL requires #+hons (same restriction as ser-hons-reader-macro)
     (set-dispatch-macro-character
      #\#
      #\Z
      'ser-hons-reader-macro)
 
+    #+hons ; SBCL requires #+hons (same restriction as ser-cons-reader-macro)
     (set-dispatch-macro-character
      #\#
      #\z
@@ -1257,11 +1259,13 @@ which is saved just in case it's needed later.")
 ; Hrmn, but is this readtable even necessary if we replace compact-printing
 ; with the serialize reader?
 
+    #+hons ; SBCL requires #+hons (same restriction as ser-hons-reader-macro)
     (set-dispatch-macro-character
      #\#
      #\Z
      'ser-hons-reader-macro)
 
+    #+hons ; SBCL requires #+hons (same restriction as ser-cons-reader-macro)
     (set-dispatch-macro-character
      #\#
      #\z

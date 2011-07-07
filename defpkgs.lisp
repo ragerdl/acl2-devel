@@ -1,4 +1,4 @@
-; ACL2 Version 4.2 -- A Computational Logic for Applicative Common Lisp
+; ACL2 Version 4.3 -- A Computational Logic for Applicative Common Lisp
 ; Copyright (C) 2011  University of Texas at Austin
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
@@ -532,7 +532,9 @@
         RETRIEVE RETURN-LAST RETURN-LAST-TABLE
         REVAPPEND REVERSE REWRITE-STACK-LIMIT
         RFIX ROUND SATISFIES SAVE-EXEC
-        SEARCH SECOND SET-BACKCHAIN-LIMIT
+        SEARCH SECOND
+        SERIALIZE-READ SERIALIZE-WRITE
+        SET-BACKCHAIN-LIMIT
         SET-BODY SET-BOGUS-DEFUN-HINTS-OK
         SET-BOGUS-MUTUAL-RECURSION-OK
         SET-CASE-SPLIT-LIMITATIONS

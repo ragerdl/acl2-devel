@@ -1,4 +1,4 @@
-; ACL2 Version 4.2 -- A Computational Logic for Applicative Common Lisp
+; ACL2 Version 4.3 -- A Computational Logic for Applicative Common Lisp
 ; Copyright (C) 2011  University of Texas at Austin
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
@@ -2339,6 +2339,7 @@ the calls took.")
             qzget-sign-abs
             raw-mode-p
             read-acl2-oracle
+            read-acl2-oracle@par
             read-object
             read-run-time
             read-standard-oi

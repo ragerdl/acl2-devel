@@ -1,4 +1,4 @@
-; ACL2 Version 4.2 -- A Computational Logic for Applicative Common Lisp
+; ACL2 Version 4.3 -- A Computational Logic for Applicative Common Lisp
 ; Copyright (C) 2011  University of Texas at Austin
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
@@ -894,6 +894,7 @@
 
 (defun hl-hspace-honsp-wrapper (x)
   ; Bootstrapping hack for serialize
+  (declare (special *default-hs*))
   (hl-hspace-honsp x *default-hs*))
 
 
