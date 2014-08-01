@@ -2960,6 +2960,28 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
            (true-listp (append a b)))
   :rule-classes :type-prescription)
 
+(defaxiom car-cdr-elim
+  (implies (consp x)
+           (equal (cons (car x) (cdr x)) x))
+  :rule-classes :elim)
+
+(defaxiom car-cons (equal (car (cons x y)) x))
+
+(defaxiom cdr-cons (equal (cdr (cons x y)) y))
+
+(defaxiom cons-equal
+  (equal (equal (cons x1 y1) (cons x2 y2))
+         (and (equal x1 x2)
+              (equal y1 y2))))
+
+; Induction Schema:   (and (implies (not (consp x)) (p x))
+;                          (implies (and (consp x) (p (car x)) (p (cdr x)))
+;                                   (p x)))
+;                     ----------------------------------------------
+;                     (p x)
+;
+;
+
 (defthm append-to-nil
   (implies (true-listp x)
            (equal (append x nil)
@@ -4088,38 +4110,6 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
        )
 
   :rule-classes :tau-system)
-
-; ; For each of the primitives we have the axiom that when their guards
-; ; are unhappy, the result is given by apply.  This is what permits us
-; ; to replace unguarded terms by apply's.  E.g.,
-;
-; (defaxiom +-guard
-;   (implies (or (not (rationalp x))
-;                (not (rationalp y)))
-;            (equal (+ x y)
-;                   (apply '+ (list x y)))))
-
-(defaxiom car-cdr-elim
-  (implies (consp x)
-           (equal (cons (car x) (cdr x)) x))
-  :rule-classes :elim)
-
-(defaxiom car-cons (equal (car (cons x y)) x))
-
-(defaxiom cdr-cons (equal (cdr (cons x y)) y))
-
-(defaxiom cons-equal
-  (equal (equal (cons x1 y1) (cons x2 y2))
-         (and (equal x1 x2)
-              (equal y1 y2))))
-
-; Induction Schema:   (and (implies (not (consp x)) (p x))
-;                          (implies (and (consp x) (p (car x)) (p (cdr x)))
-;                                   (p x)))
-;                     ----------------------------------------------
-;                     (p x)
-;
-;
 
 (defaxiom booleanp-characterp
   (booleanp (characterp x))
@@ -8153,7 +8143,7 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
 ; defining verify-guards on top of verify-guards-basic just as we now define
 ; verify-guards+ on top of verify-guards.  But that could be complicated to
 ; carry out during the boot-strap, and it could be challenging to present a
-; nice view to the user, simulataneously promoting the fiction that
+; nice view to the user, simultaneously promoting the fiction that
 ; verify-guards is a primitive while giving accurate feedback.  So we are
 ; leaving verify-guards as the primitive, but improving it to point to
 ; verify-guards+ when there is a macro alias.
@@ -12493,6 +12483,7 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
     member-equal assoc-equal subsetp-equal no-duplicatesp-equal
     rassoc-equal remove-equal position-equal
     maybe-finish-output$
+    symbol-in-current-package-p
 
 ; Found for hons after fixing note-fns-in-form just before release v4-2.
 
@@ -18964,6 +18955,29 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
 
 ;  Prin1
 
+(defun symbol-in-current-package-p (x state)
+  (declare (xargs :guard (and (symbolp x)
+                              (state-p state)
+                              (f-boundp-global 'current-package state))))
+  #+acl2-loop-only
+  (or (equal (symbol-package-name x)
+             (f-get-global 'current-package state))
+      (and (ec-call ; avoid guard proof; this is just logic anyhow
+            (member-equal
+             x
+             (package-entry-imports
+              (find-package-entry
+               (f-get-global 'current-package state)
+               (known-package-alist state)))))
+           t))
+  #-acl2-loop-only
+  (multiple-value-bind
+   (sym foundp)
+   (find-symbol (symbol-name x)
+                (f-get-global 'current-package state))
+   (and foundp ; in case x is nil
+        (eq sym x))))
+
 (skip-proofs
 (defun prin1$ (x channel state)
 
@@ -19039,14 +19053,7 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
                    (princ #\" stream))
                   ((symbolp x)
                    (cond ((keywordp x) (princ #\: stream))
-                         ((or (equal (symbol-package-name x)
-                                     (f-get-global 'current-package state))
-                              (member-eq
-                               x
-                               (package-entry-imports
-                                (find-package-entry
-                                 (f-get-global 'current-package state)
-                                 (known-package-alist state)))))
+                         ((symbol-in-current-package-p x state)
                           state)
                          (t (let ((p (symbol-package-name x)))
                               (cond ((needs-slashes p state)
@@ -19086,14 +19093,7 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
         (t
          (pprogn
           (cond ((keywordp x) (princ$ #\: channel state))
-                ((or (equal (symbol-package-name x)
-                            (f-get-global 'current-package state))
-                     (member-eq
-                      x
-                      (package-entry-imports
-                       (find-package-entry
-                        (f-get-global 'current-package state)
-                        (known-package-alist state)))))
+                ((symbol-in-current-package-p x state)
                  state)
                 (t (let ((p (symbol-package-name x)))
                      (pprogn
@@ -25032,10 +25032,12 @@ Lisp definition."
   #+clisp (apply 'ext:gc args)
   #+cmu (apply 'system::gc args)
   #+gcl
-  (if (eql (length args) 1)
-      (apply 'si::gbc args)
-    (er hard 'gc$
-        "In GCL, gc$ requires exactly one argument, typically T."))
+  (case (length args)
+    (1 (si::gbc (car args)))
+    (0 (si::gbc t))
+    (otherwise
+     (er hard 'gc$
+         "In GCL, gc$ requires one argument, typically T, or no arguments.")))
   #+lispworks (apply 'hcl::gc-generation (or args (list #+lispworks-64bit 7
                                                         #-lispworks-64bit 3)))
   #+sbcl (apply 'sb-ext:gc args)

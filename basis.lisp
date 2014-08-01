@@ -1405,6 +1405,8 @@
         (t (fargn1 v n))))
 
 (defun all-but-last (l)
+  (declare (xargs :guard (true-listp l) ; and let's verify termination/guards:
+                  :mode :logic))
   (cond ((endp l) nil)
         ((endp (cdr l)) nil)
         (t (cons (car l) (all-but-last (cdr l))))))
@@ -2747,14 +2749,7 @@
 
           (+f (cond
                ((keywordp x) (1+f acc))
-               ((or (equal (symbol-package-name x)
-                           (f-get-global 'current-package state))
-                    (member-eq
-                     x
-                     (package-entry-imports
-                      (find-package-entry
-                       (f-get-global 'current-package state)
-                       (known-package-alist state)))))
+               ((symbol-in-current-package-p x state)
                 acc)
                (t
                 (let ((p (symbol-package-name x)))
@@ -4005,14 +4000,7 @@
           ((needs-slashes str state)
            (splat-atom s (print-base) (print-radix) 0 col channel state))
           (t (fmt0 ":~s0" (list (cons #\0 str)) 0 4 col channel state nil))))
-        ((or (equal (symbol-package-name s)
-                    (f-get-global 'current-package state))
-             (member-eq
-              s
-              (package-entry-imports
-               (find-package-entry
-                (f-get-global 'current-package state)
-                (known-package-alist state)))))
+        ((symbol-in-current-package-p s state)
          (cond
           ((needs-slashes str state)
            (splat-atom s (print-base) (print-radix) 0 col channel state))
